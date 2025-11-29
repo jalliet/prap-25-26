@@ -1,1 +1,3 @@
-# prap-25-26
+# Poker Robot Arm Project (25/26)
+The aim of this project is to create a robot arm that can play poker, or act as a dealer in a poker game. In dealer mode, the robot arm will be able to pick up cards, shuffle them, deal them to players, pick up chips, handle the pot and the general actions of the game. 
+In player mode, the robot arm will be able to pick up cards, play them, and handle chips as needed against other players. 
