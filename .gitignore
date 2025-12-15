@@ -1,0 +1,4 @@
+.vscode/
+forward_kinematics.casadi
+inverse_kinematics.casadi
+jacobian.casadi
