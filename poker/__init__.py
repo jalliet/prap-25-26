@@ -1,6 +1,7 @@
 from poker.card import Card, Deck, Rank, Suit, make_card
 from poker.chips import ChipColour, ChipStack, make_stack
 from poker.player import Player, PlayerStatus
+from poker.action import Action, ActionType
 
 __all__ = [
     'Card',
@@ -13,4 +14,6 @@ __all__ = [
     'make_stack',
     'Player',
     'PlayerStatus',
+    'Action',
+    'ActionType',
 ]
