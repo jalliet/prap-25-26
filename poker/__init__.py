@@ -1,4 +1,5 @@
 from poker.card import Card, Deck, Rank, Suit, make_card
+from poker.chips import ChipColor, ChipStack, make_stack
 
 __all__ = [
     'Card',
@@ -6,4 +7,7 @@ __all__ = [
     'Rank',
     'Suit',
     'make_card',
+    'ChipColor',
+    'ChipStack',
+    'make_stack',
 ]
