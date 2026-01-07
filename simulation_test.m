@@ -5,7 +5,7 @@ import casadi.*
 n_joints = 6;
 
 % Timing
-Ts = 0.005;           % Controller runs at 200 Hz
+Ts = 0.01;           % Controller runs at 100 Hz
 Duration = 1.0;       % 1 second move
 
 % Kinematics Functions
@@ -18,7 +18,7 @@ A_d = eye(n_joints);
 B_d = Ts*A_d;
 
 Q = 100*eye(n_joints);   % Penalty on state error    
-R = 0.1*eye(n_joints);   % Penalty on control effort
+R = 1*eye(n_joints);   % Penalty on control effort
 
 % Solve DARE (Discrete Algebraic Riccati Equation)
 P = (Q ./ 2) + sqrt((Q.^2 ./ 4) + (Q .* R) ./ (Ts^2));
@@ -66,23 +66,18 @@ for k = 1:steps
     u_hist(:, k) = u_k;
     t_hist(k)    = t_vec(k);
     
-    % --- CONTINUOUS PLANT SIMULATION (ode45) ---
+    % --- DISCRETE PLANT SIMULATION ---
     % Simulate from t_k to t_{k+1} assuming u_k is constant (ZOH)
     if k < steps
-        tspan = [t_vec(k), t_vec(k+1)];
-        
-        % Robot Dynamics: q_dot = u_k
-        ode_fun = @(t, q) u_k; 
-        
-        [~, q_next_ode] = ode45(ode_fun, tspan, q_current);
-        
-        % Update state for next iteration (take the final value from ODE)
-        q_current = q_next_ode(end, :)';
+        % Update state for next iteration
+        q_current = q_ref(:, k+1) + (A_d - B_d*K)*e_k;
     end
 end
 % NB: The actual STS3215 motors do NOT have a velocity control mode.
 % Thus instead of passing u_k to the motors, we will actually be passing:
-% q_{k+1} = q_k + T_s*u_k to the motors.
+% q_{cmd} = q_{d,k+1} + (A_d - B_d*K)*e_k to the motors.
+% We also set the max velocity to be equal to:
+% q_{lim} = min(q_{max}, max(1.5*abs(u_k), q_{min})) at any time step k.
 
 %% Forward Kinematics & Plotting
 % This creates a new function that accepts n_jointsxN and returns 6xN

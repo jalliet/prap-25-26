@@ -48,9 +48,10 @@ function [t_vec, q_ref, q_vel] = generate_poker_move(start_pos, end_pos, duratio
     % q = a0 + a1*t + a2*t^2 ...
     % We can use polyval, but note MATLAB's polyval expects order [an ... a0]
     % Our coeffs are [a0 ... an], so we flip them.
-    q_ref = polyval(flip(coeffs), t_vec);
-    
+    coeffs_desc = flip(coeffs);
+    q_ref = polyval(coeffs_desc, t_vec);
+
     %% Calculate Discrete Feedforward
-    q_next = [q_ref(2:end), q_ref(end)]; 
-    q_vel = (q_next - q_ref) / Ts; % q_vel[k] = (q[k+1] - q[k]) / Ts
+    dcoeffs_desc = polyder(coeffs_desc); 
+    q_vel = polyval(dcoeffs_desc, t_vec);
 end

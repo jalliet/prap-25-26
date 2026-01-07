@@ -15,19 +15,19 @@ q = SX.sym('q', [n_joints, 1]); % Joint positions
 x_0 = 0.5;
 y_0 = 0.2;
 
-l_1 = 0.14;
-l_2 = 0.35;
-l_3 = 0.05;
-l_4 = 0.25;
-l_5 = 0.15;
-l_6 = 0.2;
-l_7 = 0.2;
-l_8 = 0.2;
-l_9 = 0.2;
-l_10 = 0.2;
-l_11 = 0.2;
-l_12 = 0.15;
-l_13 = 0.12;
+l_1 = 0.07;
+l_2 = 0.07;
+l_3 = 0.03;
+l_4 = 0.115;
+l_5 = 0.03;
+l_6 = 0.105;
+l_7 = 0.0045;
+l_8 = 0.032;
+l_9 = 0.06;
+l_10 = 0.03;
+l_11 = 0.02;
+l_12 = 0.055;
+l_13 = 0.055;
 
 %% Robot Forward Kinematics (Denavit-Hartenberg Parameters)
 % Defined for the ARM project's modified Hugging Face robot
@@ -36,12 +36,13 @@ l_13 = 0.12;
 dh_table = [  0,           0,      x_0,     0;     % WtoP1
             l_1,        pi/2,      y_0,     0;     % P1toB
               0,           0,        0,     0;     % Bto1
-            l_3,           0,      l_4, -pi/2;     % 1toP2
-              0,           0,      l_5,     0;     % P2to2
-              0,       -pi/2,      l_6,     0;     % 2toP3
-              0,        pi/2,      l_7,     0;     % P3to3
-              0,       -pi/2,      l_8,     0;     % 3toP4
-              0,        pi/2,      l_9,     0;     % P4to4
+            l_2,           0,      l_3, -pi/2;     % 1toP2
+              0,           0,      l_4,     0;     % P2to2
+              0,       -pi/2,      l_5,     0;     % 2toP3
+              0,        pi/2,      l_6,     0;     % P3to3
+              0,       -pi/2,      l_7,     0;     % 3toP4
+              0,        pi/2,      l_8,     0;     % P4toP4'
+              0,           0,      l_9,     0;     % P4'to4
               0,       -pi/2,        0, -pi/2;     % 4toP5
               0,           0,        0,     0;     % P5to5
            l_10,           0,     l_11,  pi/2;     % 5toP6
@@ -56,7 +57,7 @@ H = eye(4);
 H_init = eye(4);
 
 joint_ID = 1;
-joint_info = [3, 5, 7, 9, 11, 13];
+joint_info = [3, 5, 7, 10, 12, 14];
 init_joint_positions = cell(n_joints, 1);
 joint_positions = cell(n_joints, 1);
 joint_rotation_axes = cell(n_joints, 1);
@@ -207,8 +208,8 @@ R_z = [ cos(yaw_actual), -sin(yaw_actual), 0;
 % Align tool frame with actual arm
 R_EE = R_z*R_y*R_x; 
 
-EE_frame_wrist_position = (H_wrist(1:3, 1:3)')*H_wrist(1:3, 4);
-world_frame_wrist_position = p_EE - R_EE*EE_frame_wrist_position;
+EE_frame_wrist_position = -(H_wrist(1:3, 1:3)')*H_wrist(1:3, 4);
+world_frame_wrist_position = p_EE + R_EE*EE_frame_wrist_position;
 
 p_1_to_wrist_baseFrame = world_to_base*[world_frame_wrist_position; 1];
 IK(1) = atan2(p_1_to_wrist_baseFrame(2), p_1_to_wrist_baseFrame(1));
