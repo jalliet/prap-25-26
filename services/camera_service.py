@@ -10,7 +10,7 @@ class CameraService:
         self.queue = None
         self.stream_name = "preview"
         
-        # Configuration
+        # Config
         self.resolution = dai.ColorCameraProperties.SensorResolution.THE_1080_P
         self.preview_size = (1280, 720)
         self.fps = 30
@@ -18,7 +18,7 @@ class CameraService:
     def _create_pipeline(self):
         pipeline = dai.Pipeline()
 
-        # Define sources and outputs
+        # Define sources, outputs
         cam_rgb = pipeline.create(dai.node.ColorCamera)
         xout_rgb = pipeline.create(dai.node.XLinkOut)
 
@@ -42,7 +42,7 @@ class CameraService:
 
         pipeline = self._create_pipeline()
         
-        # Connect to device and start pipeline
+        # Connect to device, start pipeline
         try:
             self.device = dai.Device(pipeline)
             self.queue = self.device.getOutputQueue(name=self.stream_name, maxSize=4, blocking=False)
@@ -88,7 +88,7 @@ if __name__ == "__main__":
             if cv2.waitKey(1) == ord('q'):
                 break
             
-            # Small sleep to prevent busy loop if no frame
+            # Sleep prevents busy loop if no frame
             if frame is None:
                 time.sleep(0.01)
                 
