@@ -2,30 +2,17 @@
 
 This directory contains the PySide6-based Graphical User Interface for the Poker Robot Arm Project.
 
-## Prerequisites
-
-*   Python 3.10+
-*   OAK-D Lite Camera (optional, for live feed)
-
 ## Setup
 
-1.  **Create a Virtual Environment** (if you haven't already):
-    ```bash
-    # From the project root
-    python3 -m venv venv
-    ```
-
-2.  **Activate the Virtual Environment**:
-    ```bash
-    source venv/bin/activate
-    ```
-
-3.  **Install Dependencies**:
-    ```bash
-    pip install -r ../requirements.txt
-    ```
+Please refer to the [Root README](../README.md) for environment setup and installation instructions.
 
 ## Running the Application
+
+Ensure your virtual environment is activated:
+
+```bash
+source ../venv/bin/activate
+```
 
 To launch the dashboard, run the start script from the project root:
 
@@ -36,7 +23,6 @@ To launch the dashboard, run the start script from the project root:
 Or run the entry point manually:
 
 ```bash
-source venv/bin/activate
 python3 main.py
 ```
 
