@@ -1,7 +1,9 @@
 import os
 from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, 
-                               QLabel, QFrame, QListWidget, QTextEdit, QSizePolicy)
-from PySide6.QtCore import Qt
+                               QLabel, QFrame, QListWidget, QTextEdit, QSizePolicy, QSpinBox)
+from PySide6.QtCore import Qt, QFile, QTextStream, QTimer
+from gui.utils import convert_cv_qt
+from services.camera_service import CameraService
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -81,6 +83,22 @@ class MainWindow(QMainWindow):
         cam_header.setAlignment(Qt.AlignCenter)
         right_layout.addWidget(cam_header)
 
+        # FPS Control
+        fps_container = QWidget()
+        fps_layout = QHBoxLayout(fps_container)
+        fps_layout.setAlignment(Qt.AlignCenter)
+        fps_layout.setContentsMargins(0, 0, 0, 0)
+        
+        fps_label = QLabel("Feed FPS:")
+        self.fps_spinbox = QSpinBox()
+        self.fps_spinbox.setRange(1, 60)
+        self.fps_spinbox.setValue(10)
+        self.fps_spinbox.setFixedWidth(60)
+        
+        fps_layout.addWidget(fps_label)
+        fps_layout.addWidget(self.fps_spinbox)
+        right_layout.addWidget(fps_container)
+
         # Feed Container
         self.camera_feed = QLabel("Camera Feed Placeholder")
         self.camera_feed.setObjectName("cameraFeed")
@@ -92,6 +110,34 @@ class MainWindow(QMainWindow):
         # Add panels to main layout with ratio (30% left, 70% right)
         main_layout.addWidget(left_panel, 3)
         main_layout.addWidget(right_panel, 7)
+
+        # Camera Service & Timer
+        self.camera_service = CameraService()
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.update_frame)
+        
+        # Connect FPS SpinBox
+        self.fps_spinbox.valueChanged.connect(self.update_timer_interval)
+        
+        # Start Service and Timer
+        self.camera_service.start()
+        self.update_timer_interval(self.fps_spinbox.value())
+        self.timer.start()
+
+    def update_timer_interval(self, fps):
+        if fps > 0:
+            interval = int(1000 / fps)
+            self.timer.setInterval(interval)
+
+    def update_frame(self):
+        frame = self.camera_service.get_frame()
+        if frame is not None:
+            qt_img = convert_cv_qt(frame)
+            self.camera_feed.setPixmap(qt_img)
+
+    def closeEvent(self, event):
+        self.camera_service.stop()
+        event.accept()
 
     def load_stylesheet(self):
         style_file = os.path.join(os.path.dirname(__file__), "styles.qss")

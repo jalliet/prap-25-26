@@ -4,7 +4,9 @@ venv/
 *.txt
 !requirements.txt
 __pycache__/
+.cache
 *.pyc
 .DS_Store
 .trae
 *.log
+docs/PLAN_*.md
