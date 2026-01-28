@@ -13,8 +13,16 @@ In player mode, the robot arm will be able to pick up cards, play them, and hand
 ### Installation
 
 1.  **Clone the repository**:
+    
+    Using HTTPS:
     ```bash
     git clone https://github.com/jalliet/prap-25-26.git
+    cd prap-25-26
+    ```
+    
+    Using SSH:
+    ```bash
+    git clone git@github.com:jalliet/prap-25-26.git
     cd prap-25-26
     ```
 
