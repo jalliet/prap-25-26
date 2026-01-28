@@ -1,6 +1,6 @@
 import os
 from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, 
-                               QLabel, QFrame, QListWidget, QTextEdit, QSizePolicy)
+                               QLabel, QFrame, QListWidget, QTextEdit, QSizePolicy, QSpinBox)
 from PySide6.QtCore import Qt
 
 class MainWindow(QMainWindow):
@@ -80,6 +80,22 @@ class MainWindow(QMainWindow):
         cam_header.setObjectName("cameraHeaderLabel")
         cam_header.setAlignment(Qt.AlignCenter)
         right_layout.addWidget(cam_header)
+
+        # FPS Control
+        fps_container = QWidget()
+        fps_layout = QHBoxLayout(fps_container)
+        fps_layout.setAlignment(Qt.AlignCenter)
+        fps_layout.setContentsMargins(0, 0, 0, 0)
+        
+        fps_label = QLabel("Feed FPS:")
+        self.fps_spinbox = QSpinBox()
+        self.fps_spinbox.setRange(1, 60)
+        self.fps_spinbox.setValue(10)
+        self.fps_spinbox.setFixedWidth(60)
+        
+        fps_layout.addWidget(fps_label)
+        fps_layout.addWidget(self.fps_spinbox)
+        right_layout.addWidget(fps_container)
 
         # Feed Container
         self.camera_feed = QLabel("Camera Feed Placeholder")
