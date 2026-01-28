@@ -1,0 +1,54 @@
+/* Global Stylesheet */
+QMainWindow, QWidget {
+    background-color: #000000;
+    color: #FFFFFF;
+    font-family: "Courier New", Courier, monospace;
+}
+
+/* Headers */
+#headerLabel {
+    font-size: 24px;
+    font-weight: bold;
+    color: #FFFFFF;
+    letter-spacing: 2px;
+}
+
+#cameraHeaderLabel {
+    font-size: 24px;
+    font-weight: bold;
+    color: #4A90E2; /* Blue accent */
+    letter-spacing: 2px;
+}
+
+/* Info Labels */
+#infoLabel {
+    font-size: 16px;
+}
+
+#potLabel {
+    font-size: 20px;
+    font-weight: bold;
+    color: #50C878; /* Emerald Green */
+    margin: 10px 0;
+}
+
+/* Lists and Text Areas */
+QListWidget, QTextEdit {
+    background-color: #111111;
+    border: 1px solid #333333;
+    color: #DDDDDD;
+    font-size: 14px;
+}
+
+QListWidget::item {
+    padding: 5px;
+}
+
+QListWidget::item:selected {
+    background-color: #333333;
+}
+
+/* Separators */
+QFrame[frameShape="4"] { /* HLine */
+    color: #444444;
+}
