@@ -1,1 +1,4 @@
 PySide6
+depthai>=2.31.0,<3.0.0
+opencv-python>=4.5.5.62
+numpy<2.3.0
