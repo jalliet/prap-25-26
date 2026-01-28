@@ -133,7 +133,7 @@ class MainWindow(QMainWindow):
         frame = self.camera_service.get_frame()
         if frame is not None:
             qt_img = convert_cv_qt(frame)
-            self.camera_feed.setPixmap(qt_img.scaled(self.camera_feed.size(), Qt.KeepAspectRatio))
+            self.camera_feed.setPixmap(qt_img)
 
     def closeEvent(self, event):
         self.camera_service.stop()
