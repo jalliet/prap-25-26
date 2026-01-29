@@ -7,8 +7,11 @@ In player mode, the robot arm will be able to pick up cards, play them, and hand
 
 ### Prerequisites
 
-*   Python 3.10+
-*   OAK-D Lite Camera (optional, for live feed)
+*   **Python 3.11** (Required)
+    *   This version is standard on Raspberry Pi OS (Bookworm) and ensures compatibility with `PySide6` and `depthai`.
+    *   We recommend using [pyenv](https://github.com/pyenv/pyenv) to manage python versions.
+*   **Hardware**: Raspberry Pi 5 (8GB RAM) running Raspberry Pi OS (Bookworm).
+*   **Camera**: OAK-D Lite Camera (optional, for live feed).
 
 ### Installation
 
@@ -27,8 +30,17 @@ In player mode, the robot arm will be able to pick up cards, play them, and hand
     ```
 
 2.  **Create a Virtual Environment**:
+    
+    Using standard python (ensure it is 3.11):
     ```bash
-    python3 -m venv venv
+    python3.11 -m venv venv
+    ```
+    
+    OR using pyenv:
+    ```bash
+    pyenv install 3.11
+    pyenv local 3.11
+    python -m venv venv
     ```
 
 3.  **Activate the Virtual Environment**:
