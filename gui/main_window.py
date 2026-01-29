@@ -1,7 +1,7 @@
 import os
 from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, 
-                               QLabel, QFrame, QListWidget, QTextEdit, QSizePolicy, QSpinBox)
-from PySide6.QtCore import Qt, QFile, QTextStream, QTimer
+                               QLabel, QFrame, QListWidget, QTextEdit, QSizePolicy, QSpinBox, QSplitter)
+from PySide6.QtCore import Qt, QTimer
 from gui.utils import convert_cv_qt
 from services.camera_service import CameraService
 
