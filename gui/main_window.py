@@ -110,7 +110,7 @@ class MainWindow(QMainWindow):
         self.camera_feed.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
         self.camera_feed.setScaledContents(True)
         self.camera_feed.setStyleSheet("background-color: #111; border: 1px solid #333;")
-        right_layout.addWidget(self.camera_feed)
+        right_layout.addWidget(self.camera_feed, 1)
 
         # Add panels to main layout with ratio (30% left, 70% right)
         main_layout.addWidget(left_panel, 3)
