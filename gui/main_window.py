@@ -112,9 +112,11 @@ class MainWindow(QMainWindow):
         self.camera_feed.setStyleSheet("background-color: #111; border: 1px solid #333;")
         right_layout.addWidget(self.camera_feed, 1)
 
-        # Add panels to main layout with ratio (30% left, 70% right)
-        main_layout.addWidget(left_panel, 3)
-        main_layout.addWidget(right_panel, 7)
+        # Add panels to splitter with initial ratio (30% left, 70% right)
+        splitter.addWidget(left_panel)
+        splitter.addWidget(right_panel)
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 7)
 
         # Camera Service & Timer
         self.camera_service = CameraService()
