@@ -6,7 +6,7 @@ from gui.utils import convert_cv_qt
 from services.camera_service import CameraService
 
 class MainWindow(QMainWindow):
-    DEFAULT_FPS = 10
+    DEFAULT_FPS = 30
 
     def __init__(self):
         super().__init__()
