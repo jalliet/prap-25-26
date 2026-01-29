@@ -5,10 +5,12 @@ current_ver=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.vers
 required_ver="3.11"
 
 if [ "$current_ver" != "$required_ver" ]; then
-    echo "⚠️  WARNING: You are running Python $current_ver, but this project targets Python $required_ver."
-    echo "   Unexpected behavior may occur with PySide6 or depthai on Raspberry Pi."
-    echo "   Press ENTER to continue anyway, or Ctrl+C to abort."
-    read
+    echo "❌ ERROR: Python version mismatch."
+    echo "   Current: $current_ver"
+    echo "   Required: $required_ver"
+    echo "   This project strictly requires Python 3.11 for Raspberry Pi 5 compatibility."
+    echo "   Please create a new venv with Python 3.11 and try again."
+    exit 1
 fi
 
 python3 main.py
