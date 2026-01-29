@@ -12,6 +12,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Poker Robot Dashboard")
         self.resize(1200, 800)
+        self.setMinimumSize(800, 600)
         
         # Load Stylesheet
         self.load_stylesheet()
@@ -22,6 +23,10 @@ class MainWindow(QMainWindow):
         main_layout = QHBoxLayout(central_widget)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
+
+        # Main Splitter
+        self.splitter = QSplitter(Qt.Horizontal)
+        main_layout.addWidget(self.splitter)
 
         # Left Panel (Game State)
         left_panel = QWidget()
@@ -64,6 +69,8 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(QLabel("Players:"))
         self.player_list = QListWidget()
         self.player_list.setObjectName("playerList")
+        self.player_list.setWordWrap(True)
+        self.player_list.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         left_layout.addWidget(self.player_list)
 
         # Log Area
@@ -71,6 +78,9 @@ class MainWindow(QMainWindow):
         self.log_area = QTextEdit()
         self.log_area.setObjectName("logArea")
         self.log_area.setReadOnly(True)
+        self.log_area.setLineWrapMode(QTextEdit.WidgetWidth)
+        self.log_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.log_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         left_layout.addWidget(self.log_area)
 
         # Right Panel (Camera Feed)
@@ -105,13 +115,16 @@ class MainWindow(QMainWindow):
         self.camera_feed = QLabel("Camera Feed Placeholder")
         self.camera_feed.setObjectName("cameraFeed")
         self.camera_feed.setAlignment(Qt.AlignCenter)
-        self.camera_feed.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.camera_feed.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+        self.camera_feed.setScaledContents(True)
         self.camera_feed.setStyleSheet("background-color: #111; border: 1px solid #333;")
-        right_layout.addWidget(self.camera_feed)
+        right_layout.addWidget(self.camera_feed, 1)
 
-        # Add panels to main layout with ratio (30% left, 70% right)
-        main_layout.addWidget(left_panel, 3)
-        main_layout.addWidget(right_panel, 7)
+        # Add panels to splitter with initial ratio (30% left, 70% right)
+        self.splitter.addWidget(left_panel)
+        self.splitter.addWidget(right_panel)
+        self.splitter.setStretchFactor(0, 3)
+        self.splitter.setStretchFactor(1, 7)
 
         # Camera Service & Timer
         self.camera_service = CameraService()
