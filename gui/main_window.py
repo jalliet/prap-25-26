@@ -12,6 +12,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Poker Robot Dashboard")
         self.resize(1200, 800)
+        self.setMinimumSize(800, 600)
         
         # Load Stylesheet
         self.load_stylesheet()
@@ -71,6 +72,7 @@ class MainWindow(QMainWindow):
         self.log_area = QTextEdit()
         self.log_area.setObjectName("logArea")
         self.log_area.setReadOnly(True)
+        self.log_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         left_layout.addWidget(self.log_area)
 
         # Right Panel (Camera Feed)
@@ -105,7 +107,8 @@ class MainWindow(QMainWindow):
         self.camera_feed = QLabel("Camera Feed Placeholder")
         self.camera_feed.setObjectName("cameraFeed")
         self.camera_feed.setAlignment(Qt.AlignCenter)
-        self.camera_feed.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.camera_feed.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+        self.camera_feed.setScaledContents(True)
         self.camera_feed.setStyleSheet("background-color: #111; border: 1px solid #333;")
         right_layout.addWidget(self.camera_feed)
 
