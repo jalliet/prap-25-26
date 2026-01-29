@@ -6,6 +6,8 @@ from gui.utils import convert_cv_qt
 from services.camera_service import CameraService
 
 class MainWindow(QMainWindow):
+    DEFAULT_FPS = 10
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Poker Robot Dashboard")
@@ -92,7 +94,7 @@ class MainWindow(QMainWindow):
         fps_label = QLabel("Feed FPS:")
         self.fps_spinbox = QSpinBox()
         self.fps_spinbox.setRange(1, 60)
-        self.fps_spinbox.setValue(10)
+        self.fps_spinbox.setValue(self.DEFAULT_FPS)
         self.fps_spinbox.setFixedWidth(60)
         
         fps_layout.addWidget(fps_label)
