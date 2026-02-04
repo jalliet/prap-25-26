@@ -72,7 +72,7 @@ rosdep install --from-paths src --ignore-src -r -y
 The kinematic solver relies on specific Python libraries.
 
 ```bash
-cd ~/poker_arm_ws/src/poker_control
+cd ~/poker_arm_ws
 pip3 install -r requirements.txt
 
 ```
