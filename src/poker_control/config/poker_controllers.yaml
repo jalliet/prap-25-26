@@ -1,0 +1,48 @@
+controller_manager:
+  ros__parameters:
+    update_rate: 100  # Main Loop Rate (Hz)
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    forward_position_controller:
+      type: forward_command_controller/ForwardCommandController
+
+    # Not currently using
+    joint_trajectory_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+    gz_ros2_control:
+      ros__parameters:
+        position_proportional_gain: 100.0
+
+joint_state_broadcaster:
+  ros__parameters:
+    publish_rate: 100
+
+forward_position_controller:
+  ros__parameters:
+    joints:
+      - "1"
+      - "2"
+      - "3"
+      - "4"
+      - "5"
+      - "6"
+    interface_name: position
+
+joint_trajectory_controller:
+  ros__parameters:
+    joints:
+      - "1"
+      - "2"
+      - "3"
+      - "4"
+      - "5"
+      - "6"
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+    open_loop_control: true
+    allow_partial_joints_goal: false
