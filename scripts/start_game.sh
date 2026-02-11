@@ -8,8 +8,8 @@ if [ "$current_ver" != "$required_ver" ]; then
     echo "❌ ERROR: Python version mismatch."
     echo "   Current: $current_ver"
     echo "   Required: $required_ver"
-    echo "   This project strictly requires Python 3.11 for Raspberry Pi 5 compatibility."
-    echo "   Please create a new venv with Python 3.11 and try again."
+    echo "   This project strictly requires Python $required_ver for Raspberry Pi 5 compatibility."
+    echo "   Please create a new venv with Python $required_ver and try again."
     exit 1
 fi
 
