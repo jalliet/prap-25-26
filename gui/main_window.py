@@ -130,8 +130,14 @@ class MainWindow(QMainWindow):
         self.fps_spinbox.setValue(self.DEFAULT_FPS)
         self.fps_spinbox.setFixedWidth(60)
         
+        # Vision Mode Indicator
+        self.mode_label = QLabel("Mode: IDLE")
+        self.mode_label.setStyleSheet("font-weight: bold; color: yellow;")
+        
         fps_layout.addWidget(fps_label)
         fps_layout.addWidget(self.fps_spinbox)
+        fps_layout.addSpacing(20)
+        fps_layout.addWidget(self.mode_label)
         right_layout.addWidget(fps_container)
 
         # Feed Container
@@ -176,10 +182,12 @@ class MainWindow(QMainWindow):
         self.phase_label.setText(f"Phase: {phase.name}")
         self.log_message(f"Game Phase: {phase.name}")
         self.update_player_list()
+        self.update_mode_label()
 
     def on_pot_change(self, total: int):
         self.pot_label.setText(f"Pot: {total}")
         self.log_message(f"Pot updated: {total}")
+        self.update_mode_label()
 
     def on_cards_updated(self, cards):
         # Format cards for display
@@ -190,11 +198,27 @@ class MainWindow(QMainWindow):
              # Basic display logic
              self.community_cards_label.setText(f"Community Cards: {card_str}")
         self.log_message(f"Cards dealt: {card_str}")
+        self.update_mode_label()
 
     def on_turn_change(self, player):
         if player:
             self.log_message(f"Turn: {player.name}")
             # Highlight player in list (optional)
+
+    def update_mode_label(self):
+        """Updates the vision mode indicator."""
+        mode_name = self.vision_controller.mode.name
+        self.mode_label.setText(f"Mode: {mode_name}")
+        
+        # Simple color coding
+        if mode_name == "HAND_MONITORING":
+            self.mode_label.setStyleSheet("font-weight: bold; color: #00FF00;") # Green
+        elif mode_name == "CARD_READING":
+            self.mode_label.setStyleSheet("font-weight: bold; color: #00FFFF;") # Cyan
+        elif mode_name == "CHIP_SEGMENTATION":
+            self.mode_label.setStyleSheet("font-weight: bold; color: #FFA500;") # Orange
+        else:
+            self.mode_label.setStyleSheet("font-weight: bold; color: yellow;")
 
     def log_message(self, message):
         self.log_area.append(message)
@@ -210,6 +234,10 @@ class MainWindow(QMainWindow):
         if frame is not None:
             qt_img = convert_cv_qt(frame)
             self.camera_feed.setPixmap(qt_img)
+            
+        # Periodically check/update mode label just in case controller changed it internally
+        # (though ideally we'd have a signal for mode change too)
+        self.update_mode_label()
 
     def closeEvent(self, event):
         self.vision_controller.stop()
