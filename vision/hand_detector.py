@@ -10,7 +10,7 @@ class HandDetector(BaseDetector):
 
     def __init__(self, model_path: str = None):
         """
-        Initialize the hand detector.
+        Initialise the hand detector.
         
         Args:
             model_path: Path to the local model weights (optional for dummy).
