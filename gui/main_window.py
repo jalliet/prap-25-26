@@ -3,7 +3,9 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
                                QLabel, QFrame, QListWidget, QTextEdit, QSizePolicy, QSpinBox, QSplitter)
 from PySide6.QtCore import Qt, QTimer
 from gui.utils import convert_cv_qt
-from services.camera_service import CameraService
+from services.vision_controller import VisionController, VisionMode
+from poker.game_state import GameState, GamePhase
+from poker.player import Player
 
 class MainWindow(QMainWindow):
     DEFAULT_FPS = 30
@@ -13,6 +15,18 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Poker Robot Dashboard")
         self.resize(1200, 800)
         self.setMinimumSize(800, 600)
+        
+        # Initialize Backend Components
+        self.game_state = GameState()
+        self.vision_controller = VisionController()
+        
+        # Connect Vision Controller to Game State
+        self.vision_controller.connect_to_game_state(self.game_state)
+        
+        # Add some dummy players for testing
+        self.game_state.add_player(Player(0, "P0", 0))
+        self.game_state.add_player(Player(1, "P1", 1))
+        self.game_state.add_player(Player(2, "P2", 2))
         
         # Load Stylesheet
         self.load_stylesheet()
@@ -40,6 +54,12 @@ class MainWindow(QMainWindow):
         gs_header.setObjectName("headerLabel")
         gs_header.setAlignment(Qt.AlignCenter)
         left_layout.addWidget(gs_header)
+        
+        # Phase Label
+        self.phase_label = QLabel(f"Phase: {self.game_state.phase.name}")
+        self.phase_label.setObjectName("infoLabel")
+        self.phase_label.setAlignment(Qt.AlignCenter)
+        left_layout.addWidget(self.phase_label)
 
         # Separator
         line1 = QFrame()
@@ -72,6 +92,9 @@ class MainWindow(QMainWindow):
         self.player_list.setWordWrap(True)
         self.player_list.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         left_layout.addWidget(self.player_list)
+        
+        # Update initial player list
+        self.update_player_list()
 
         # Log Area
         left_layout.addWidget(QLabel("Game Log:"))
@@ -126,18 +149,55 @@ class MainWindow(QMainWindow):
         self.splitter.setStretchFactor(0, 3)
         self.splitter.setStretchFactor(1, 7)
 
-        # Camera Service & Timer
-        self.camera_service = CameraService()
+        # Vision Controller & Timer
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_frame)
         
         # Connect FPS SpinBox
         self.fps_spinbox.valueChanged.connect(self.update_timer_interval)
         
+        # Connect Game Signals to UI Updates
+        self.game_state.on_phase_change.connect(self.on_phase_change)
+        self.game_state.on_pot_change.connect(self.on_pot_change)
+        self.game_state.on_card_detection_required.connect(self.on_cards_updated)
+        self.game_state.on_turn_change.connect(self.on_turn_change)
+        
         # Start Service and Timer
-        self.camera_service.start()
+        self.vision_controller.start()
         self.update_timer_interval(self.fps_spinbox.value())
         self.timer.start()
+
+    def update_player_list(self):
+        self.player_list.clear()
+        for p in self.game_state.players:
+            self.player_list.addItem(str(p))
+
+    def on_phase_change(self, phase: GamePhase):
+        self.phase_label.setText(f"Phase: {phase.name}")
+        self.log_message(f"Game Phase: {phase.name}")
+        self.update_player_list()
+
+    def on_pot_change(self, total: int):
+        self.pot_label.setText(f"Pot: {total}")
+        self.log_message(f"Pot updated: {total}")
+
+    def on_cards_updated(self, cards):
+        # Format cards for display
+        card_str = " ".join([f"[{str(c)}]" for c in cards])
+        current_text = self.community_cards_label.text()
+        # Append if not replacing (simple logic for now)
+        if "Community Cards:" in current_text:
+             # Basic display logic
+             self.community_cards_label.setText(f"Community Cards: {card_str}")
+        self.log_message(f"Cards dealt: {card_str}")
+
+    def on_turn_change(self, player):
+        if player:
+            self.log_message(f"Turn: {player.name}")
+            # Highlight player in list (optional)
+
+    def log_message(self, message):
+        self.log_area.append(message)
 
     def update_timer_interval(self, fps):
         if fps > 0:
@@ -145,13 +205,14 @@ class MainWindow(QMainWindow):
             self.timer.setInterval(interval)
 
     def update_frame(self):
-        frame = self.camera_service.get_frame()
+        # Get frame from VisionController instead of direct CameraService
+        frame = self.vision_controller.get_frame()
         if frame is not None:
             qt_img = convert_cv_qt(frame)
             self.camera_feed.setPixmap(qt_img)
 
     def closeEvent(self, event):
-        self.camera_service.stop()
+        self.vision_controller.stop()
         event.accept()
 
     def load_stylesheet(self):
