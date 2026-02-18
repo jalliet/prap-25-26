@@ -2,6 +2,7 @@ import cv2
 from typing import Optional, Callable
 from services.camera_service import CameraService
 from enum import Enum, auto
+from poker.game_state import GameState, GamePhase
 
 class VisionMode(Enum):
     HAND_MONITORING = auto()
@@ -32,6 +33,39 @@ class VisionController:
         
         # Callbacks for processing results
         self.on_frame_processed = None # Signal/Callback(processed_frame)
+
+    def connect_to_game_state(self, game_state: GameState):
+        """Connect VisionController to GameState signals."""
+        game_state.on_phase_change.connect(self._handle_phase_change)
+        game_state.on_card_detection_required.connect(self._handle_card_detection)
+        game_state.on_pot_change.connect(self._handle_pot_change)
+        
+    def _handle_phase_change(self, phase: GamePhase):
+        """Handles game phase changes."""
+        print(f"VisionController: Phase changed to {phase.name}")
+        # Default behavior: Hand monitoring during active play
+        if phase in [GamePhase.PRE_FLOP, GamePhase.FLOP, GamePhase.TURN, GamePhase.RIVER]:
+             self.set_mode(VisionMode.HAND_MONITORING)
+        elif phase == GamePhase.SHOWDOWN:
+             # In showdown, we might want to read cards again or verify
+             pass
+
+    def _handle_card_detection(self, cards):
+        """Triggered when new community cards are dealt."""
+        # Check if it's the right list of cards, or just a signal
+        print("VisionController: Card detection required.")
+        # Switch to card reading mode temporarily
+        self.set_mode(VisionMode.CARD_READING)
+        # In a real system, trigger single-shot capture here
+        # and revert to hand monitoring after success/timeout.
+        # For now,  manually revert or let next phase change handle it.
+        
+    def _handle_pot_change(self, total_pot: int):
+        """Triggered when pot size changes."""
+        print(f"VisionController: Pot updated to {total_pot}. Triggering chip check.")
+        # Trigger side view chip segmentation if we had a side camera
+        # self.set_mode(VisionMode.CHIP_SEGMENTATION) 
+        # Note: We might not want to switch MAIN camera mode if using two cameras.
 
     def start(self):
         """Starts the camera service and processing loop."""
