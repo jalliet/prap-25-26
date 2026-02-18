@@ -52,7 +52,16 @@ class VisionController:
         if self.mode != mode:
             print(f"Switching Vision Mode: {self.mode.name} -> {mode.name}")
             self.mode = mode
-            # Logic to reconfigure pipeline or detectors would go here
+            
+            # Logic to reconfigure pipeline or detectors
+            if self.mode == VisionMode.CARD_READING:
+                 # In real implementation, might pause video stream here
+                 # to capture a high-res still, or adjust exposure settings.
+                 print("VisionController: Configuring for Card Reading (High-Res/Still)")
+            elif self.mode == VisionMode.HAND_MONITORING:
+                 print("VisionController: Configuring for Hand Monitoring (Video Stream)")
+            elif self.mode == VisionMode.CHIP_SEGMENTATION:
+                 print("VisionController: Configuring for Chip Segmentation (Side View)")
 
     def get_frame(self):
         """
@@ -75,11 +84,20 @@ class VisionController:
 
         # Placeholder for processing logic based on self.mode
         if self.mode == VisionMode.HAND_MONITORING:
-            # self.hand_detector.process(frame)
+            # TODO: Integrate HandDetector
+            # result = self.hand_detector.process(frame)
+            # self._draw_hand_overlay(frame, result)
             pass
+            
         elif self.mode == VisionMode.CARD_READING:
-            # self.card_detector.process(frame)
+            # TODO: Integrate CardDetector
+            # This might only run once per trigger, not every frame
+            # result = self.card_detector.process(frame)
             pass
+            
+        elif self.mode == VisionMode.CHIP_SEGMENTATION:
+             # TODO: Integrate ChipSegmentor
+             pass
             
         # Emit/Return result
         if self.on_frame_processed:
