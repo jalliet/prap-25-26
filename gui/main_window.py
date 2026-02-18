@@ -1,6 +1,6 @@
 import os
 from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, 
-                               QLabel, QFrame, QListWidget, QTextEdit, QSizePolicy, QSpinBox, QSplitter)
+                               QLabel, QFrame, QListWidget, QTextEdit, QSizePolicy, QSpinBox, QSplitter, QPushButton)
 from PySide6.QtCore import Qt, QTimer
 from gui.utils import convert_cv_qt
 from services.vision_controller import VisionController, VisionMode
@@ -24,9 +24,9 @@ class MainWindow(QMainWindow):
         self.vision_controller.connect_to_game_state(self.game_state)
         
         # Add some dummy players for testing
-        self.game_state.add_player(Player(0, "P0", 0))
-        self.game_state.add_player(Player(1, "P1", 1))
-        self.game_state.add_player(Player(2, "P2", 2))
+        self.game_state.add_player(Player(0, "Hero", 0))
+        self.game_state.add_player(Player(1, "Villain 1", 1))
+        self.game_state.add_player(Player(2, "Villain 2", 2))
         
         # Load Stylesheet
         self.load_stylesheet()
@@ -105,6 +105,21 @@ class MainWindow(QMainWindow):
         self.log_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.log_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         left_layout.addWidget(self.log_area)
+        
+        # Test Controls (Bottom of Left Panel)
+        controls_group = QWidget()
+        controls_layout = QHBoxLayout(controls_group)
+        controls_layout.setContentsMargins(0,0,0,0)
+        
+        self.btn_start_hand = QPushButton("Start Hand")
+        self.btn_start_hand.clicked.connect(self.start_hand_test)
+        controls_layout.addWidget(self.btn_start_hand)
+        
+        self.btn_bet_test = QPushButton("Test Bet")
+        self.btn_bet_test.clicked.connect(self.bet_test)
+        controls_layout.addWidget(self.btn_bet_test)
+        
+        left_layout.addWidget(controls_group)
 
         # Right Panel (Camera Feed)
         right_panel = QWidget()
@@ -172,6 +187,29 @@ class MainWindow(QMainWindow):
         self.vision_controller.start()
         self.update_timer_interval(self.fps_spinbox.value())
         self.timer.start()
+
+    def start_hand_test(self):
+        """Manually trigger a new hand."""
+        self.log_message("--- Manual Trigger: Start Hand ---")
+        self.game_state.start_new_hand()
+        # Initial betting round needs someone to act
+        # This is just a test hook
+
+    def bet_test(self):
+        """Manually trigger a bet action for current player."""
+        player = self.game_state.current_player
+        if player:
+            self.log_message(f"--- Manual Trigger: {player.name} Bets 50 ---")
+            # In a real game, logic would handle amount.
+            # Here we force a bet/raise
+            try:
+                if self.game_state.current_bet_amount == 0:
+                     self.game_state.process_action(player, "bet", 50)
+                else:
+                     self.game_state.process_action(player, "call")
+            except Exception as e:
+                self.log_message(f"Error: {e}")
+            self.update_player_list()
 
     def update_player_list(self):
         self.player_list.clear()
