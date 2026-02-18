@@ -1,16 +1,30 @@
 import numpy as np
-from typing import Any, Dict, List
+from typing import Dict, Optional, TypedDict
 from vision.base_detector import BaseDetector
+from poker.chips import ChipColour, ChipStack
 
-class ChipSegmentor(BaseDetector):
+class ChipSegmentationResult(TypedDict):
     """
-    Detector for segmenting and counting poker chips.
-    Uses computer vision techniques (e.g., color segmentation, circle detection) or ML models.
+    Data artifact representing the result of a chip counting operation.
+    
+    Attributes:
+        stack: A ChipStack object containing the breakdown of detected chips.
+        confidence: An overall confidence score for the estimation (0.0 to 1.0).
+    """
+    stack: ChipStack
+    confidence: float
+
+class ChipSegmentor(BaseDetector[ChipSegmentationResult]):
+    """
+    Detector for segmenting and counting poker chips from a side-view camera.
+    
+    This module combines colour segmentation and geometric analysis (or ML)
+    to estimate the value of chip stacks on the table.
     """
 
-    def __init__(self, model_path: str = None):
+    def __init__(self, model_path: Optional[str] = None):
         """
-        Initialize the chip segmentor.
+        Initialise the chip segmentor.
         
         Args:
             model_path: Path to local model weights (if using ML-based segmentation).
@@ -20,28 +34,27 @@ class ChipSegmentor(BaseDetector):
 
     def _load_model(self):
         """
-        Load the model from the local path.
+        Loads the model or calibrates the CV pipeline.
         """
         if self.model_path:
             print(f"ChipSegmentor: Loading model from {self.model_path}...")
         else:
-            print("ChipSegmentor: Initialized with dummy/CV mode.")
+            print("ChipSegmentor: Initialised in standard CV mode.")
 
-    def process(self, image: np.ndarray) -> Dict[str, Any]:
+    def process(self, image: np.ndarray) -> ChipSegmentationResult:
         """
-        Segment chips and calculate stack value.
+        Analyses the image to segment chips and calculate the total stack value.
 
         Args:
-            image: Input image (side view).
+            image: Input BGR image (side view).
 
         Returns:
-            Dictionary with chip counts per color and total value.
+            A ChipSegmentationResult containing the estimated stack and confidence.
         """
         # TODO: Implement chip segmentation logic
+        
+        # Return a dummy zero-value result for now
         return {
-            "white": 0,
-            "red": 0,
-            "blue": 0,
-            "black": 0,
-            "total_value": 0
+            "stack": ChipStack(),
+            "confidence": 0.0
         }
