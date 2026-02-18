@@ -7,6 +7,8 @@ from services.vision_controller import VisionController, VisionMode
 from poker.game_state import GameState, GamePhase
 from poker.player import Player
 
+from poker.action import Action, ActionType
+
 class MainWindow(QMainWindow):
     DEFAULT_FPS = 30
 
@@ -204,9 +206,11 @@ class MainWindow(QMainWindow):
             # Here we force a bet/raise
             try:
                 if self.game_state.current_bet_amount == 0:
-                     self.game_state.process_action(player, "bet", 50)
+                     action = Action(player.player_id, ActionType.BET, 50)
+                     self.game_state.process_action(action)
                 else:
-                     self.game_state.process_action(player, "call")
+                     action = Action(player.player_id, ActionType.CALL)
+                     self.game_state.process_action(action)
             except Exception as e:
                 self.log_message(f"Error: {e}")
             self.update_player_list()
