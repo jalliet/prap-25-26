@@ -36,6 +36,11 @@ class GameState:
         self.current_player_index: int = 0
         self.dealer_index: int = 0
         
+        # Betting state
+        self.current_bet_amount: int = 0
+        self.last_raiser_index: int = -1  # Index of player who made last aggressive action
+        self.players_acted_in_round: int = 0 
+
         # Vision flags
         self.hand_detection_active: bool = False
         self.card_detection_active: bool = False
@@ -83,6 +88,9 @@ class GameState:
         self.community_cards = []
         self.pot = ChipStack()
         self.phase = GamePhase.PRE_FLOP
+        self.current_bet_amount = 0
+        self.last_raiser_index = -1
+        self.players_acted_in_round = 0
         
         # Rotate dealer button
         self.dealer_index = (self.dealer_index + 1) % len(self.players)
@@ -99,6 +107,9 @@ class GameState:
         self.next_turn() # Advance to BB (to start action UTG, we need more calls)
         # Simplicity: just start with player after dealer for now
         self.current_player_index = (self.dealer_index + 1) % len(self.players)
+        
+        # In real game, SB and BB would post blinds here.
+        # For now, assume they are posted/handled by process_action later.
 
         self.on_phase_change.emit(self.phase)
         self.on_turn_change.emit(self.current_player)
@@ -150,5 +161,99 @@ class GameState:
             action_type: 'check', 'call', 'raise', 'fold'
             amount: The amount involved (for call/raise)
         """
-        # Placeholder for action logic
-        pass
+        if player != self.current_player:
+            print(f"Error: It is not {player.name}'s turn.")
+            return
+
+        action_type = action_type.lower()
+        
+        if action_type == 'fold':
+            player.fold()
+        elif action_type == 'check':
+            if player.current_bet < self.current_bet_amount:
+                print("Error: Cannot check, must call.")
+                return # In real UI, should raise or return False
+            pass # Check is valid
+        elif action_type == 'call':
+            to_call = self.current_bet_amount - player.current_bet
+            actual_bet = player.bet(to_call)
+            self.update_pot(actual_bet)
+        elif action_type == 'raise' or action_type == 'bet':
+             # Raise BY amount (add to the current highest bet)
+             # "Match or do more" -> Match (Call) handled above. Do more (Raise) is here.
+             if amount <= 0:
+                  print(f"Error: Raise amount {amount} must be positive.")
+                  return
+             
+             new_total_bet = self.current_bet_amount + amount
+             to_add = new_total_bet - player.current_bet
+             
+             actual_bet = player.bet(to_add)
+             self.update_pot(actual_bet)
+             
+             # Update table state if we actually increased the high bet (handles all-in short stacks)
+             if player.current_bet > self.current_bet_amount:
+                 self.current_bet_amount = player.current_bet
+                 self.last_raiser_index = self.current_player_index
+                 self.players_acted_in_round = 0 # Reset counter since action re-opened
+            
+        self.players_acted_in_round += 1
+        self.on_player_action.emit(player, action_type, amount)
+        
+        if self._is_round_complete():
+            self._advance_phase()
+        else:
+            self.next_turn()
+
+    def _is_round_complete(self) -> bool:
+        """Checks if the betting round is complete."""
+        active_players = self.get_eligible_players()
+        if len(active_players) < 2:
+            return True # Everyone else folded
+            
+        # Round complete if:
+        # Everyone active has acted 1+ times (or we are back to raiser)
+        # Everyone active has matched current bet
+        
+        # If no one raised, we need everyone to check
+        if self.last_raiser_index == -1:
+             # Pre-flop is special (BB is "raiser"), but simplifying for now
+             if self.players_acted_in_round >= len(active_players):
+                 return True
+        else:
+            # If someone raised, we continue until everyone calls or folds
+            # Checking if current player matches the bet is handled by the loop logic usually
+            # But here we just check if everyone matches
+            all_matched = all(p.current_bet == self.current_bet_amount for p in active_players)
+            if all_matched and self.players_acted_in_round >= len(active_players):
+                return True
+                
+        return False
+
+    def _advance_phase(self):
+        """Moves to the next game phase."""
+        if self.phase == GamePhase.PRE_FLOP:
+            self.phase = GamePhase.FLOP
+            self.deal_community_cards(3)
+        elif self.phase == GamePhase.FLOP:
+            self.phase = GamePhase.TURN
+            self.deal_community_cards(1)
+        elif self.phase == GamePhase.TURN:
+            self.phase = GamePhase.RIVER
+            self.deal_community_cards(1)
+        elif self.phase == GamePhase.RIVER:
+            self.phase = GamePhase.SHOWDOWN
+            # Handle showdown logic here (determine winner)
+            
+        # Reset betting for new phase
+        self.current_bet_amount = 0
+        self.last_raiser_index = -1
+        self.players_acted_in_round = 0
+        for p in self.players:
+            p.current_bet = 0
+            
+        # Reset turn to first active player after dealer
+        self.current_player_index = self.dealer_index
+        self.next_turn()
+        
+        self.on_phase_change.emit(self.phase)
