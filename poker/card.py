@@ -4,6 +4,9 @@ import random
 
 
 class Suit(Enum):
+    """
+    Represents the four suits in a standard deck of cards.
+    """
     HEARTS = ("H", "♥")
     DIAMONDS = ("D", "♦")
     CLUBS = ("C", "♣")
@@ -18,7 +21,9 @@ class Suit(Enum):
     
     @classmethod
     def from_code(cls, code: str) -> 'Suit':
-        """Create Suit from code (H, D, C, S)."""
+        """
+        Factory method to create a Suit from a short code (H, D, C, S).
+        """
         for suit in cls:
             if suit.code == code.upper():
                 return suit
@@ -26,7 +31,10 @@ class Suit(Enum):
 
 
 class Rank(Enum):
-    """Card ranks with numeric values for comparison."""
+    """
+    Represents card ranks with numeric values for comparison.
+    Ace is considered high (14).
+    """
     TWO = 2
     THREE = 3
     FOUR = 4
@@ -43,7 +51,7 @@ class Rank(Enum):
     
     @property
     def code(self) -> str:
-        """Get the single-character code for this rank."""
+        """Returns the single-character code for this rank (e.g., 'T', 'A')."""
         codes = {
             2: "2", 3: "3", 4: "4", 5: "5", 6: "6",
             7: "7", 8: "8", 9: "9", 10: "T",
@@ -68,7 +76,9 @@ class Rank(Enum):
     
     @classmethod
     def from_code(cls, code: str) -> 'Rank':
-        """Create Rank from code (2-9, T, J, Q, K, A)."""
+        """
+        Factory method to create a Rank from a code (2-9, T, J, Q, K, A).
+        """
         code_map = {
             "2": cls.TWO, "3": cls.THREE, "4": cls.FOUR,
             "5": cls.FIVE, "6": cls.SIX, "7": cls.SEVEN,
@@ -83,7 +93,10 @@ class Rank(Enum):
 
 class Card:
     """
-    Represents a playing card with rank and suit.
+    Represents a standard playing card with a specific Rank and Suit.
+    
+    This class is immutable and hashable, making it suitable for use in sets
+    and dictionary keys (e.g., for hand analysis or tracking dealt cards).
     """
     
     def __init__(self, rank: Rank, suit: Suit):
@@ -91,10 +104,14 @@ class Card:
         self.suit = suit
     
     def __str__(self) -> str:
-        """String representation: e.g., 'A♥' or 'K♠'"""
+        """Returns a human-readable string representation (e.g., 'A♥' or 'K♠')."""
         return f"{self.rank}{self.suit}"
     
     def __repr__(self) -> str:
+        """
+        Returns an unambiguous string representation for debugging.
+        Format: Card(rank_code, suit_code) -> e.g., Card(AH)
+        """
         return f"Card({self.rank.code}{self.suit.code})"
     
     def __eq__(self, other) -> bool:
@@ -104,18 +121,22 @@ class Card:
     
     def __hash__(self) -> int:
         """
-        Enable Cards to be used in sets and as dict keys.
-        For dupl detection, tracking dealt cards, fast lookups.
+        Enables Cards to be used in sets and as dict keys.
+        Crucial for duplicate detection and fast lookups.
         """
         return hash((self.rank, self.suit))
     
     @classmethod
     def from_string(cls, card_str: str) -> 'Card':
         """
-        Create Card from code notation (rank + suit code).
-        Examples: 'AH', 'KS', '2D', 'TC'
-        Rank codes: 2-9, T, J, Q, K, A
-        Suit codes: H (Hearts), D (Diamonds), C (Clubs), S (Spades)
+        Factory method to create a Card from standard notation (rank code + suit code).
+        
+        Args:
+            card_str: A string like 'AH', 'KS', '2D', 'TC'.
+                      Rank codes: 2-9, T, J, Q, K, A
+                      Suit codes: H (Hearts), D (Diamonds), C (Clubs), S (Spades)
+        Returns:
+            A new Card instance.
         """
         card_str = card_str.strip().upper()
         
@@ -133,7 +154,11 @@ class Card:
 
 class Deck:
     """
-    Standard 52-card deck with shuffle and deal functionality.
+    Represents a standard 52-card deck with shuffle and deal functionality.
+    
+    State:
+        cards: List of Card objects currently remaining in the deck.
+        dealt_cards: List of Card objects that have been dealt since the last reset.
     """
     
     def __init__(self):
@@ -142,7 +167,7 @@ class Deck:
         self.reset()
     
     def reset(self):
-        """Create a fresh 52-card deck."""
+        """Resets the deck to a fresh, ordered state with all 52 cards."""
         self.cards = [
             Card(rank, suit)
             for suit in Suit
@@ -151,16 +176,19 @@ class Deck:
         self.dealt_cards = []
     
     def shuffle(self):
-        """Shuffle the remaining cards in the deck."""
+        """Randomises the order of the remaining cards in the deck."""
         random.shuffle(self.cards)
     
     def deal(self, n: int = 1) -> list[Card]:
         """
-        Deal a specified number of cards from the deck.
+        Deals a specified number of cards from the top of the deck.
+        
+        Args:
+            n: Number of cards to deal.
         Returns:
-            List of dealt cards
+            List of dealt Card objects.
         Raises:
-            ValueError: If not enough cards remain
+            ValueError: If fewer than n cards remain in the deck.
         """
         if n > len(self.cards):
             raise ValueError(
@@ -174,11 +202,11 @@ class Deck:
         return dealt
     
     def deal_one(self) -> Card:
-        """Deal a single card from the deck."""
+        """Deals a single card from the deck."""
         return self.deal(1)[0]
     
     def remaining(self) -> int:
-        """Return number of cards remaining in deck."""
+        """Returns the number of cards currently remaining in the deck."""
         return len(self.cards)
     
     def __len__(self) -> int:
@@ -190,6 +218,6 @@ class Deck:
 
 def make_card(card_str: str) -> Card:
     """
-    Create a Card from code notation.
+    Convenience factory function to create a Card from code notation.
     """
     return Card.from_string(card_str)

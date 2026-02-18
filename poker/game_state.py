@@ -3,6 +3,7 @@ from typing import List, Callable, Optional
 from poker.player import Player
 from poker.card import Card, Deck
 from poker.chips import ChipStack
+from poker.action import Action, ActionType
 
 class GamePhase(Enum):
     PRE_FLOP = auto()
@@ -26,6 +27,9 @@ class Signal:
 class GameState:
     """
     Central class to orchestrate the poker game flow and trigger vision events.
+    
+    This class maintains the ground truth of the game (players, pot, cards, phase)
+    and emits signals when this state changes, allowing UI and Vision systems to react.
     """
     def __init__(self):
         self.players: List[Player] = []
@@ -38,8 +42,8 @@ class GameState:
         
         # Betting state
         self.current_bet_amount: int = 0
-        self.last_raiser_index: int = -1  # Index of player who made last aggressive action
-        self.players_acted_in_round: int = 0 
+        self.last_raiser_index: int = -1  # Index of player who made the last aggressive action
+        self.players_acted_in_round: int = 0 # Count of players who acted this round
 
         # Vision flags
         self.hand_detection_active: bool = False
@@ -49,7 +53,7 @@ class GameState:
         self.on_phase_change = Signal()
         self.on_pot_change = Signal()
         self.on_card_detection_required = Signal()
-        self.on_player_action = Signal()  # Emitted when a player acts
+        self.on_player_action = Signal()  # Emitted with an Action object
         self.on_turn_change = Signal()    # Emitted when turn passes to next player
 
     def add_player(self, player: Player):
@@ -100,7 +104,7 @@ class GameState:
             player.reset_for_new_hand()
             
         # Set initial current player (Player after dealer = SB)
-        # Note: In heads-up (2 players), Dealer is SB. Simple logic, assuming 2+ players for standard rotation, but just like basic rotation. 
+        # Note: In heads-up (2 players), Dealer is SB. Simple logic, assuming 2+ players for standard rotation.
         # Robust implementation would handle heads-up rules.
         self.current_player_index = self.dealer_index
         self.next_turn() # Advance to SB
@@ -108,8 +112,8 @@ class GameState:
         # Simplicity: just start with player after dealer for now
         self.current_player_index = (self.dealer_index + 1) % len(self.players)
         
-        # In real game, SB and BB would post blinds here.
-        # For now, assume they are posted/handled by process_action later.
+        # In a real game, SB and BB would post blinds here.
+        # For now, we'll assume they are posted or handled by process_action later.
 
         self.on_phase_change.emit(self.phase)
         self.on_turn_change.emit(self.current_player)
@@ -153,52 +157,72 @@ class GameState:
         self.pot.add_stack(chips_added)
         self.on_pot_change.emit(self.pot.total)
 
-    def process_action(self, player: Player, action_type: str, amount: int = 0):
+    def process_action(self, player: Player, action_type_str: str, amount: int = 0):
         """
-        Handles player actions (Check, Call, Raise, Fold).
+        Handles player actions (Check, Call, Raise, Fold) and updates game state.
+        
+        This method translates the raw intent into a concrete Action artifact,
+        applies the financial implications, and advances the game flow.
+        
         Args:
-            player: The player performing the action
-            action_type: 'check', 'call', 'raise', 'fold'
-            amount: The amount involved (for call/raise)
+            player: The player performing the action.
+            action_type_str: String representation of the action ('check', 'call', etc.).
+            amount: The amount involved (relevant for bet/raise).
         """
         if player != self.current_player:
             print(f"Error: It is not {player.name}'s turn.")
             return
 
-        action_type = action_type.lower()
+        # Normalise input to ActionType
+        try:
+            action_type = ActionType(action_type_str.lower())
+        except ValueError:
+            print(f"Error: Unknown action type '{action_type_str}'")
+            return
         
-        if action_type == 'fold':
+        # Validate and Execute Action
+        if action_type == ActionType.FOLD:
             player.fold()
-        elif action_type == 'check':
+            
+        elif action_type == ActionType.CHECK:
             if player.current_bet < self.current_bet_amount:
                 print("Error: Cannot check, must call.")
-                return # In real UI, should raise or return False
+                return # In real UI, this should raise or return False
             pass # Check is valid
-        elif action_type == 'call':
+            
+        elif action_type == ActionType.CALL:
             to_call = self.current_bet_amount - player.current_bet
             actual_bet = player.bet(to_call)
             self.update_pot(actual_bet)
-        elif action_type == 'raise' or action_type == 'bet':
-             # Raise BY amount (add to the current highest bet)
-             # "Match or do more" -> Match (Call) handled above. Do more (Raise) is here.
+            amount = actual_bet # Update amount to reflect actual chips committed
+            
+        elif action_type == ActionType.RAISE or action_type == ActionType.BET:
+             # Logic: Raise BY amount (add to the current highest bet)
              if amount <= 0:
                   print(f"Error: Raise amount {amount} must be positive.")
                   return
              
+             # Target total bet = Current highest bet + Raise amount
              new_total_bet = self.current_bet_amount + amount
+             
+             # Amount to add from stack = Target - What player already has in front
              to_add = new_total_bet - player.current_bet
              
              actual_bet = player.bet(to_add)
              self.update_pot(actual_bet)
              
-             # Update table state if we actually increased the high bet (handles all-in short stacks)
+             # Update table state
+             # Only update if we actually increased the high bet (handles all-in short stacks)
              if player.current_bet > self.current_bet_amount:
                  self.current_bet_amount = player.current_bet
                  self.last_raiser_index = self.current_player_index
                  self.players_acted_in_round = 0 # Reset counter since action re-opened
             
         self.players_acted_in_round += 1
-        self.on_player_action.emit(player, action_type, amount)
+        
+        # Create Action Artifact
+        action = Action(player_id=player.player_id, action_type=action_type, amount=amount)
+        self.on_player_action.emit(action)
         
         if self._is_round_complete():
             self._advance_phase()
@@ -211,9 +235,9 @@ class GameState:
         if len(active_players) < 2:
             return True # Everyone else folded
             
-        # Round complete if:
-        # Everyone active has acted 1+ times (or we are back to raiser)
-        # Everyone active has matched current bet
+        # Round is complete if:
+        # 1. Everyone active has acted at least once (or we are back to raiser)
+        # 2. Everyone active has matched the current bet
         
         # If no one raised, we need everyone to check
         if self.last_raiser_index == -1:
@@ -231,7 +255,11 @@ class GameState:
         return False
 
     def _advance_phase(self):
-        """Moves to the next game phase."""
+        """
+        Moves the game to the next phase (Pre-Flop -> Flop -> Turn -> River -> Showdown).
+        
+        This transition resets betting parameters and triggers card dealing.
+        """
         if self.phase == GamePhase.PRE_FLOP:
             self.phase = GamePhase.FLOP
             self.deal_community_cards(3)
