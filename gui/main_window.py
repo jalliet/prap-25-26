@@ -26,8 +26,8 @@ class CardSlotConfig:
     """Configuration for the visual appearance of card slots."""
     width: int = 60
     height: int = 84
-    # Style for an empty slot (placeholder)
-    empty_style: str = "background-color: #222; border: 1px solid #444; border-radius: 4px;"
+    # Style for an empty slot (placeholder) - slightly darker than background (#2F2F2F) for depth
+    empty_style: str = "background-color: #222222; border: 1px solid #444444; border-radius: 4px;"
     # Style for a filled slot (transparent to show SVG)
     filled_style: str = "background-color: transparent; border: none;"
     # Spacing between cards in layout
