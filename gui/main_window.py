@@ -9,7 +9,37 @@ from poker.game_state import GameState, GamePhase
 from poker.player import Player
 
 from poker.action import Action, ActionType
+from dataclasses import dataclass
+from typing import Tuple
 
+@dataclass(frozen=True)
+class WindowConfig:
+    """Configuration for the main application window."""
+    title: str = "Poker Robot Dashboard"
+    width: int = 1200
+    height: int = 800
+    min_width: int = 800
+    min_height: int = 600
+
+@dataclass(frozen=True)
+class CardSlotConfig:
+    """Configuration for the visual appearance of card slots."""
+    width: int = 60
+    height: int = 84
+    # Style for an empty slot (placeholder)
+    empty_style: str = "background-color: #222; border: 1px solid #444; border-radius: 4px;"
+    # Style for a filled slot (transparent to show SVG)
+    filled_style: str = "background-color: transparent; border: none;"
+    # Spacing between cards in layout
+    spacing: int = 10
+
+@dataclass(frozen=True)
+class UIConfig:
+    """Global UI Configuration container."""
+    window: WindowConfig = WindowConfig()
+    card_slot: CardSlotConfig = CardSlotConfig()
+    default_fps: int = 30
+    
 class MainWindow(QMainWindow):
     """
     Main application window acting as the primary User Interface.
@@ -17,13 +47,13 @@ class MainWindow(QMainWindow):
     This class integrates the GameState logic, Vision Controller, and UI components
     to provide a comprehensive dashboard for monitoring the poker game.
     """
-    DEFAULT_FPS = 30
-
-    def __init__(self):
+    def __init__(self, config: UIConfig = UIConfig()):
         super().__init__()
-        self.setWindowTitle("Poker Robot Dashboard")
-        self.resize(1200, 800)
-        self.setMinimumSize(800, 600)
+        self.config = config
+        
+        self.setWindowTitle(self.config.window.title)
+        self.resize(self.config.window.width, self.config.window.height)
+        self.setMinimumSize(self.config.window.min_width, self.config.window.min_height)
         
         # Initialise Backend Components
         self.game_state = GameState()
@@ -79,17 +109,16 @@ class MainWindow(QMainWindow):
 
         # Community Cards
         self.community_cards_layout = QHBoxLayout()
-        self.community_cards_layout.setSpacing(10)
+        self.community_cards_layout.setSpacing(self.config.card_slot.spacing)
         self.community_cards_layout.setAlignment(Qt.AlignCenter)
         
         # Create 5 slots for community cards
         self.card_slots = []
         for _ in range(5):
             slot = QSvgWidget()
-            slot.setFixedSize(60, 84) # 200x280 ratio approx scaled down
-            # Initial placeholder style - can be done via stylesheet or loading an empty SVG
-            # For now, we'll leave them empty/black
-            slot.setStyleSheet("background-color: #222; border: 1px solid #444; border-radius: 4px;")
+            slot.setFixedSize(self.config.card_slot.width, self.config.card_slot.height)
+            # Initial placeholder style
+            slot.setStyleSheet(self.config.card_slot.empty_style)
             self.community_cards_layout.addWidget(slot)
             self.card_slots.append(slot)
             
@@ -164,7 +193,7 @@ class MainWindow(QMainWindow):
         fps_label = QLabel("Feed FPS:")
         self.fps_spinbox = QSpinBox()
         self.fps_spinbox.setRange(1, 60)
-        self.fps_spinbox.setValue(self.DEFAULT_FPS)
+        self.fps_spinbox.setValue(self.config.default_fps)
         self.fps_spinbox.setFixedWidth(60)
         
         # Vision Mode Indicator
@@ -280,13 +309,13 @@ class MainWindow(QMainWindow):
                 
                 if os.path.exists(filepath):
                     slot.load(filepath)
-                    slot.setStyleSheet("background-color: transparent; border: none;")
+                    slot.setStyleSheet(self.config.card_slot.filled_style)
                 else:
                     self.log_message(f"Error: Asset not found {filepath}")
             else:
                 # Reset empty slots
                 slot.load(b"") # Clear SVG
-                slot.setStyleSheet("background-color: #222; border: 1px solid #444; border-radius: 4px;")
+                slot.setStyleSheet(self.config.card_slot.empty_style)
 
         self.update_mode_label()
 
