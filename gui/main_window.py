@@ -1,4 +1,5 @@
 import os
+import numpy as np
 from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, 
                                QLabel, QFrame, QListWidget, QTextEdit, QSizePolicy, QSpinBox, QSplitter, QPushButton)
 from PySide6.QtCore import Qt, QTimer, QSize
@@ -38,7 +39,6 @@ class UIConfig:
     """Global UI Configuration container."""
     window: WindowConfig = WindowConfig()
     card_slot: CardSlotConfig = CardSlotConfig()
-    default_fps: int = 30
     
 class MainWindow(QMainWindow):
     """
@@ -193,7 +193,7 @@ class MainWindow(QMainWindow):
         fps_label = QLabel("Feed FPS:")
         self.fps_spinbox = QSpinBox()
         self.fps_spinbox.setRange(1, 60)
-        self.fps_spinbox.setValue(self.config.default_fps)
+        self.fps_spinbox.setValue(self.vision_controller.fps)
         self.fps_spinbox.setFixedWidth(60)
         
         # Vision Mode Indicator
@@ -221,12 +221,11 @@ class MainWindow(QMainWindow):
         self.splitter.setStretchFactor(0, 3)
         self.splitter.setStretchFactor(1, 7)
 
-        # Vision Controller & Timer
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.update_frame)
+        # Vision Controller & Timer (Timer removed, using signals)
+        # self.timer = QTimer(self)
         
         # Connect FPS SpinBox
-        self.fps_spinbox.valueChanged.connect(self.update_timer_interval)
+        # self.fps_spinbox.valueChanged.connect(self.update_timer_interval)
         
         # Connect Game Signals to UI Updates
         self.game_state.on_phase_change.connect(self.on_phase_change)
@@ -234,10 +233,14 @@ class MainWindow(QMainWindow):
         self.game_state.on_card_detection_required.connect(self.on_cards_updated)
         self.game_state.on_turn_change.connect(self.on_turn_change)
         
-        # Start Service and Timer
+        # Connect Vision Controller Signals
+        self.vision_controller.frame_ready.connect(self.update_frame)
+        
+        # Start Service
         self.vision_controller.start()
-        self.update_timer_interval(self.fps_spinbox.value())
-        self.timer.start()
+        
+        # Initial FPS setting
+        self.fps_spinbox.valueChanged.connect(self.vision_controller.set_fps)
 
     def start_hand_test(self):
         """Manually trigger a new hand."""
@@ -342,14 +345,11 @@ class MainWindow(QMainWindow):
     def log_message(self, message):
         self.log_area.append(message)
 
-    def update_timer_interval(self, fps):
-        if fps > 0:
-            interval = int(1000 / fps)
-            self.timer.setInterval(interval)
-
-    def update_frame(self):
-        # Get frame from VisionController instead of direct CameraService
-        frame = self.vision_controller.get_frame()
+    def update_frame(self, frame: np.ndarray):
+        """
+        Updates the camera feed with the latest frame from the VisionController.
+        Triggered by the frame_ready signal.
+        """
         if frame is not None:
             qt_img = convert_cv_qt(frame)
             self.camera_feed.setPixmap(qt_img)
