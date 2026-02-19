@@ -1,0 +1,9 @@
+<svg width="200" height="200" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<defs>
+<mask id="c-4-mask">
+<rect width="24" height="24" fill="white" />
+<text x="12" y="15.5" font-family="Arial, sans-serif" font-weight="900" font-size="9" letter-spacing="0" text-anchor="middle" fill="black">4</text>
+</mask>
+</defs>
+<path d="M12 2a4 4 0 0 0-4 4c0 .8.2 1.5.6 2.1C5.7 8.5 3.5 10.5 3.5 13.5a5 5 0 0 0 5 5c.6 0 1.2-.1 1.8-.3l-1.3 3.8h6l-1.3-3.8c.6.2 1.2.3 1.8.3a5 5 0 0 0 5-5c0-3-2.2-5-5.1-5.4.4-.6.6-1.3.6-2.1a4 4 0 0 0-4-4Z" fill="#1A1A1A" mask="url(#c-4-mask)" />
+</svg>
