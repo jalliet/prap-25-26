@@ -7,7 +7,15 @@ from services.vision_controller import VisionController, VisionMode
 from poker.game_state import GameState, GamePhase
 from poker.player import Player
 
+from poker.action import Action, ActionType
+
 class MainWindow(QMainWindow):
+    """
+    Main application window acting as the primary User Interface.
+    
+    This class integrates the GameState logic, Vision Controller, and UI components
+    to provide a comprehensive dashboard for monitoring the poker game.
+    """
     DEFAULT_FPS = 30
 
     def __init__(self):
@@ -16,14 +24,15 @@ class MainWindow(QMainWindow):
         self.resize(1200, 800)
         self.setMinimumSize(800, 600)
         
-        # Initialize Backend Components
+        # Initialise Backend Components
         self.game_state = GameState()
         self.vision_controller = VisionController()
         
         # Connect Vision Controller to Game State
+        # This link allows the vision system to autonomously react to game phase changes
         self.vision_controller.connect_to_game_state(self.game_state)
         
-        # Add some dummy players for testing
+        # Add some dummy players for testing purposes
         self.game_state.add_player(Player(0, "Hero", 0))
         self.game_state.add_player(Player(1, "Villain 1", 1))
         self.game_state.add_player(Player(2, "Villain 2", 2))
@@ -204,9 +213,11 @@ class MainWindow(QMainWindow):
             # Here we force a bet/raise
             try:
                 if self.game_state.current_bet_amount == 0:
-                     self.game_state.process_action(player, "bet", 50)
+                     action = Action(player.player_id, ActionType.BET, 50)
+                     self.game_state.process_action(action)
                 else:
-                     self.game_state.process_action(player, "call")
+                     action = Action(player.player_id, ActionType.CALL)
+                     self.game_state.process_action(action)
             except Exception as e:
                 self.log_message(f"Error: {e}")
             self.update_player_list()
@@ -248,7 +259,7 @@ class MainWindow(QMainWindow):
         mode_name = self.vision_controller.mode.name
         self.mode_label.setText(f"Mode: {mode_name}")
         
-        # Simple color coding
+        # Simple colour coding
         if mode_name == "HAND_MONITORING":
             self.mode_label.setStyleSheet("font-weight: bold; color: #00FF00;") # Green
         elif mode_name == "CARD_READING":

@@ -17,14 +17,18 @@ def assign_positions(
     button_seat: int
 ) -> Tuple[int, int]:
     """
-    Assign position labels to players based on button location.
+    Assigns position labels to players based on the dealer button location.
+    
+    This function modifies the 'position_label' attribute of the Player objects in place
+    and returns the seat indices for the blinds.
+    
     Args:
-        players: List of active players (must have valid seat attributes)
-        button_seat: Seat number of the dealer button
+        players: List of active players (must have valid seat attributes).
+        button_seat: Seat number of the dealer button.
     Returns:
-        Tuple of (small_blind_seat, big_blind_seat)
+        Tuple of (small_blind_seat, big_blind_seat).
     Raises:
-        ValueError: If player count is not 2-6
+        ValueError: If player count is not between 2 and 6.
     """
     player_count = len(players)
     
@@ -64,11 +68,12 @@ def assign_positions(
 
 def get_preflop_order(players: List[Player]) -> List[Player]:
     """
-    Get players in preflop acting order (UTG first, BB last).
+    Returns players in preflop acting order (UTG first, BB last).
+    
     Args:
-        players: List of players with position_label assigned
+        players: List of players with position_label assigned.
     Returns:
-        List of players in preflop acting order
+        List of players ordered by preflop action sequence.
     """
     player_count = len(players)
     labels = POSITIONS[player_count]
@@ -89,12 +94,13 @@ def get_preflop_order(players: List[Player]) -> List[Player]:
 
 def get_postflop_order(players: List[Player]) -> List[Player]:
     """
-    Get players in postflop acting order (SB first, BTN last).
-    Only includes players still in hand.
+    Returns players in postflop acting order (SB first, BTN last).
+    Only includes players still in the hand.
+    
     Args:
-        players: List of players with position_label assigned
+        players: List of players with position_label assigned.
     Returns:
-        List of active players in postflop acting order
+        List of active players ordered by postflop action sequence.
     """
     player_count = len(players)
     labels = POSITIONS[player_count]

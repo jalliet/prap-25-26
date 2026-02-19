@@ -3,7 +3,11 @@ from typing import Dict
 
 
 class ChipColour(Enum):
-    """Chip colors with their values."""
+    """
+    Represents standard poker chip colours with their associated monetary values.
+    
+    This enumeration serves as the ground truth for chip denomination in the system.
+    """
     WHITE = 1
     RED = 5
     BLUE = 25
@@ -11,6 +15,7 @@ class ChipColour(Enum):
     
     @property
     def code(self) -> str:
+        """Returns the short code for the chip colour (e.g., 'W', 'R')."""
         codes = {
             1: "W",
             5: "R",
@@ -21,106 +26,124 @@ class ChipColour(Enum):
     
     @classmethod
     def from_code(cls, code: str) -> 'ChipColour':
-        """Create ChipColour from code (W, R, B, BK)."""
+        """
+        Factory method to create a ChipColour from a short code.
+        Args:
+            code: The short code string (e.g., 'W', 'R', 'B', 'BK').
+        Returns:
+            The corresponding ChipColour enum member.
+        """
         code_map = {
             "W": cls.WHITE,
             "R": cls.RED,
             "B": cls.BLUE,
             "BK": cls.BLACK
         }
-        color = code_map.get(code.upper())
-        if color is None:
-            raise ValueError(f"Invalid chip color code: {code}")
-        return color
+        colour = code_map.get(code.upper())
+        if colour is None:
+            raise ValueError(f"Invalid chip colour code: {code}")
+        return colour
 
 
 class ChipStack:
     """
-    Represents stack of poker chips with color breakdown.
-    Track counts of each chip color, use operations for adding, subtracting, and calculating total value.
+    Represents a physical or virtual stack of poker chips.
+    
+    This data structure maintains the count of each chip denomination and provides
+    methods for arithmetic operations (add, remove) and value calculation.
     """
     
     def __init__(self, chips: Dict[ChipColour, int] = None):
         """
-        chips: Dict mapping ChipColour to count. Defaults to empty stack.
+        Initialise a ChipStack with a dictionary of chips.
+        
+        Args:
+            chips: Dictionary mapping ChipColour to count. Defaults to empty stack.
         """
-        self._chips: Dict[ChipColour, int] = {color: 0 for color in ChipColour}
+        self._chips: Dict[ChipColour, int] = {colour: 0 for colour in ChipColour}
         if chips:
-            for color, count in chips.items():
+            for colour, count in chips.items():
                 if count < 0:
-                    raise ValueError(f"Chip count cannot be negative: {color.name}={count}")
-                self._chips[color] = count
+                    raise ValueError(f"Chip count cannot be negative: {colour.name}={count}")
+                self._chips[colour] = count
     
     @property
     def total(self) -> int:
-        """Calculate total value of all chips."""
-        return sum(color.value * count for color, count in self._chips.items())
+        """Calculates the total monetary value of all chips in the stack."""
+        return sum(colour.value * count for colour, count in self._chips.items())
     
-    def count(self, color: ChipColour) -> int:
-        """Get count of chips of a specific color."""
-        return self._chips[color]
+    def count(self, colour: ChipColour) -> int:
+        """Returns the count of chips for a specific colour."""
+        return self._chips[colour]
     
-    def add(self, color: ChipColour, n: int) -> None:
-        """Add chips of a specific color."""
+    def add(self, colour: ChipColour, n: int) -> None:
+        """Adds n chips of a specific colour to the stack."""
         if n < 0:
             raise ValueError(f"Cannot add negative chips: {n}")
-        self._chips[color] += n
+        self._chips[colour] += n
     
-    def remove(self, color: ChipColour, n: int) -> None:
-        """Remove chips of a specific color."""
+    def remove(self, colour: ChipColour, n: int) -> None:
+        """Removes n chips of a specific colour from the stack."""
         if n < 0:
             raise ValueError(f"Cannot remove negative chips: {n}")
-        if self._chips[color] < n:
+        if self._chips[colour] < n:
             raise ValueError(
-                f"Cannot remove {n} {color.name} chips, only have {self._chips[color]}"
+                f"Cannot remove {n} {colour.name} chips, only have {self._chips[colour]}"
             )
-        self._chips[color] -= n
+        self._chips[colour] -= n
     
     def add_stack(self, other: 'ChipStack') -> None:
-        """Add another chip stack to this one."""
-        for color in ChipColour:
-            self._chips[color] += other._chips[color]
+        """Merges another chip stack into this one."""
+        for colour in ChipColour:
+            self._chips[colour] += other._chips[colour]
     
     def can_remove_stack(self, other: 'ChipStack') -> bool:
-        """Check if we can remove another stack from this one."""
-        for color in ChipColour:
-            if self._chips[color] < other._chips[color]:
+        """Checks if this stack contains enough chips of each colour to remove the other stack."""
+        for colour in ChipColour:
+            if self._chips[colour] < other._chips[colour]:
                 return False
         return True
     
     def remove_stack(self, other: 'ChipStack') -> None:
-        """Remove another chip stack from this one."""
+        """Removes the chips present in the other stack from this one."""
         if not self.can_remove_stack(other):
             raise ValueError("Insufficient chips to remove stack")
-        for color in ChipColour:
-            self._chips[color] -= other._chips[color]
+        for colour in ChipColour:
+            self._chips[colour] -= other._chips[colour]
     
     def is_empty(self) -> bool:
-        """Check if the stack has no chips."""
+        """Returns True if the stack has zero total value."""
         return self.total == 0
     
     def copy(self) -> 'ChipStack':
-        """Create a copy of this chip stack."""
+        """Creates a deep copy of this chip stack."""
         return ChipStack(self._chips.copy())
     
     def breakdown(self) -> Dict[ChipColour, int]:
-        """Get the chip breakdown as a dict."""
-        return {color: count for color, count in self._chips.items() if count > 0}
+        """Returns a dictionary of chips present in the stack (count > 0)."""
+        return {colour: count for colour, count in self._chips.items() if count > 0}
     
     def __str__(self) -> str:
-        """Compact string representation: R:3(15) G:1(25) Total 40"""
+        """
+        Returns a human-readable string representation of the stack.
+        Format: "W:5(5) R:2(10) Total 15"
+        """
         parts = []
-        for color in ChipColour:
-            count = self._chips[color]
+        for colour in ChipColour:
+            count = self._chips[colour]
             if count > 0:
-                value = count * color.value
-                parts.append(f"{color.code}:{count}({value})")
+                value = count * colour.value
+                parts.append(f"{colour.code}:{count}({value})")
         if not parts:
             return "Empty (0)"
         return " ".join(parts) + f" Total {self.total}"
     
     def __repr__(self) -> str:
-        return f"ChipStack({self.total})"
+        """
+        Returns an unambiguous string representation for debugging.
+        Format: ChipStack(total=X, breakdown={...})
+        """
+        return f"ChipStack(total={self.total}, breakdown={self.breakdown()})"
     
     def __eq__(self, other) -> bool:
         if not isinstance(other, ChipStack):
@@ -130,11 +153,13 @@ class ChipStack:
     @classmethod
     def from_total(cls, total: int) -> 'ChipStack':
         """
-        Create chip stack from total stack value using largest denomination breakdown.
+        Factory method to create a ChipStack from a total integer value.
+        Uses a greedy algorithm to approximate the optimal breakdown (largest denominations first).
+        
         Args:
-            total: Total chip value to break down
+            total: The total monetary value to represent.
         Returns:
-            ChipStack with optimal breakdown
+            A ChipStack instance with the calculated chip counts.
         """
         if total < 0:
             raise ValueError(f"Total cannot be negative: {total}")
@@ -142,24 +167,28 @@ class ChipStack:
         remaining = total
         chips = {}
         
-        for color in sorted(ChipColour, key=lambda c: c.value, reverse=True):
-            count = remaining // color.value
+        # Sort by value descending for greedy breakdown
+        for colour in sorted(ChipColour, key=lambda c: c.value, reverse=True):
+            count = remaining // colour.value
             if count > 0:
-                chips[color] = count
-                remaining -= count * color.value
+                chips[colour] = count
+                remaining -= count * colour.value
         
         return cls(chips)
 
 
 def make_stack(**kwargs) -> ChipStack:
     """
-    Convenience function to create a chip stack.
-    Examples:
-        make_stack(R=3, G=1)  # 3 red + 1 green = 40
-        make_stack(W=5)       # 5 white = 5
+    Convenience factory function to create a chip stack from keyword arguments.
+    
+    Args:
+        **kwargs: Key is the chip code (e.g., 'R', 'W'), value is the count.
+        
+    Example:
+        make_stack(R=3, W=5) -> ChipStack with 3 Red and 5 White chips.
     """
     chips = {}
     for code, count in kwargs.items():
-        color = ChipColour.from_code(code)
-        chips[color] = count
+        colour = ChipColour.from_code(code)
+        chips[colour] = count
     return ChipStack(chips)
