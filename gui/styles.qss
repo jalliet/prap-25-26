@@ -1,6 +1,6 @@
 /* Global Stylesheet */
 QMainWindow, QWidget {
-    background-color: #000000;
+    background-color: #2F2F2F; /* Dark Grey for contrast with #1A1A1A cards */
     color: #FFFFFF;
     font-family: "Courier New", Courier, monospace;
 }

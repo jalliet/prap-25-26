@@ -1,14 +1,45 @@
 import os
 from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, 
                                QLabel, QFrame, QListWidget, QTextEdit, QSizePolicy, QSpinBox, QSplitter, QPushButton)
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QSize
+from PySide6.QtSvgWidgets import QSvgWidget
 from gui.utils import convert_cv_qt
 from services.vision_controller import VisionController, VisionMode
 from poker.game_state import GameState, GamePhase
 from poker.player import Player
 
 from poker.action import Action, ActionType
+from dataclasses import dataclass
+from typing import Tuple
 
+@dataclass(frozen=True)
+class WindowConfig:
+    """Configuration for the main application window."""
+    title: str = "Poker Robot Dashboard"
+    width: int = 1200
+    height: int = 800
+    min_width: int = 800
+    min_height: int = 600
+
+@dataclass(frozen=True)
+class CardSlotConfig:
+    """Configuration for the visual appearance of card slots."""
+    width: int = 60
+    height: int = 84
+    # Style for an empty slot (placeholder) - slightly darker than background (#2F2F2F) for depth
+    empty_style: str = "background-color: #222222; border: 1px solid #444444; border-radius: 4px;"
+    # Style for a filled slot (transparent to show SVG)
+    filled_style: str = "background-color: transparent; border: none;"
+    # Spacing between cards in layout
+    spacing: int = 10
+
+@dataclass(frozen=True)
+class UIConfig:
+    """Global UI Configuration container."""
+    window: WindowConfig = WindowConfig()
+    card_slot: CardSlotConfig = CardSlotConfig()
+    default_fps: int = 30
+    
 class MainWindow(QMainWindow):
     """
     Main application window acting as the primary User Interface.
@@ -16,13 +47,13 @@ class MainWindow(QMainWindow):
     This class integrates the GameState logic, Vision Controller, and UI components
     to provide a comprehensive dashboard for monitoring the poker game.
     """
-    DEFAULT_FPS = 30
-
-    def __init__(self):
+    def __init__(self, config: UIConfig = UIConfig()):
         super().__init__()
-        self.setWindowTitle("Poker Robot Dashboard")
-        self.resize(1200, 800)
-        self.setMinimumSize(800, 600)
+        self.config = config
+        
+        self.setWindowTitle(self.config.window.title)
+        self.resize(self.config.window.width, self.config.window.height)
+        self.setMinimumSize(self.config.window.min_width, self.config.window.min_height)
         
         # Initialise Backend Components
         self.game_state = GameState()
@@ -77,10 +108,21 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(line1)
 
         # Community Cards
-        self.community_cards_label = QLabel("Community Cards: [ ] [ ] [ ] [ ] [ ]")
-        self.community_cards_label.setObjectName("infoLabel")
-        self.community_cards_label.setAlignment(Qt.AlignCenter)
-        left_layout.addWidget(self.community_cards_label)
+        self.community_cards_layout = QHBoxLayout()
+        self.community_cards_layout.setSpacing(self.config.card_slot.spacing)
+        self.community_cards_layout.setAlignment(Qt.AlignCenter)
+        
+        # Create 5 slots for community cards
+        self.card_slots = []
+        for _ in range(5):
+            slot = QSvgWidget()
+            slot.setFixedSize(self.config.card_slot.width, self.config.card_slot.height)
+            # Initial placeholder style
+            slot.setStyleSheet(self.config.card_slot.empty_style)
+            self.community_cards_layout.addWidget(slot)
+            self.card_slots.append(slot)
+            
+        left_layout.addLayout(self.community_cards_layout)
 
         # Pot Display
         self.pot_label = QLabel("Pot: 0")
@@ -151,7 +193,7 @@ class MainWindow(QMainWindow):
         fps_label = QLabel("Feed FPS:")
         self.fps_spinbox = QSpinBox()
         self.fps_spinbox.setRange(1, 60)
-        self.fps_spinbox.setValue(self.DEFAULT_FPS)
+        self.fps_spinbox.setValue(self.config.default_fps)
         self.fps_spinbox.setFixedWidth(60)
         
         # Vision Mode Indicator
@@ -239,14 +281,42 @@ class MainWindow(QMainWindow):
         self.update_mode_label()
 
     def on_cards_updated(self, cards):
-        # Format cards for display
+        """
+        Updates the UI to display the community cards using SVG assets.
+        Expects cards to be a list of Card objects.
+        """
+        # Format for log
         card_str = " ".join([f"[{str(c)}]" for c in cards])
-        current_text = self.community_cards_label.text()
-        # Append if not replacing (simple logic for now)
-        if "Community Cards:" in current_text:
-             # Basic display logic
-             self.community_cards_label.setText(f"Community Cards: {card_str}")
-        self.log_message(f"Cards dealt: {card_str}")
+        self.log_message(f"Cards updated: {card_str}")
+        
+        # Clear/Reset slots if needed (e.g. new hand)
+        # For now, we just overwrite from left to right
+        
+        for i, slot in enumerate(self.card_slots):
+            if i < len(cards):
+                card = cards[i]
+                # Construct filename: RankCode + SuitCode .svg (e.g. '10H.svg', 'AC.svg')
+                # Rank.code returns '2'-'9', 'T', 'J', 'Q', 'K', 'A'
+                # Suit.code returns 'H', 'D', 'C', 'S'
+                
+                # Note: Our asset generation used '10' not 'T', so we need to handle that mapping if Rank.code returns 'T'
+                r_code = card.rank.code
+                if r_code == 'T':
+                    r_code = '10'
+                    
+                filename = f"{r_code}{card.suit.code}.svg"
+                filepath = os.path.join("assets", filename)
+                
+                if os.path.exists(filepath):
+                    slot.load(filepath)
+                    slot.setStyleSheet(self.config.card_slot.filled_style)
+                else:
+                    self.log_message(f"Error: Asset not found {filepath}")
+            else:
+                # Reset empty slots
+                slot.load(b"") # Clear SVG
+                slot.setStyleSheet(self.config.card_slot.empty_style)
+
         self.update_mode_label()
 
     def on_turn_change(self, player):

@@ -1,0 +1,9 @@
+<svg width="200" height="200" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<defs>
+<mask id="d-6-mask">
+<rect width="24" height="24" fill="white" />
+<text x="12" y="15.5" font-family="Arial, sans-serif" font-weight="900" font-size="9" letter-spacing="0" text-anchor="middle" fill="black">6</text>
+</mask>
+</defs>
+<path d="m12 2 9 10-9 10-9-10z" fill="#E63946" mask="url(#d-6-mask)" />
+</svg>
