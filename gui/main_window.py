@@ -1,7 +1,8 @@
 import os
 from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, 
                                QLabel, QFrame, QListWidget, QTextEdit, QSizePolicy, QSpinBox, QSplitter, QPushButton)
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QSize
+from PySide6.QtSvgWidgets import QSvgWidget
 from gui.utils import convert_cv_qt
 from services.vision_controller import VisionController, VisionMode
 from poker.game_state import GameState, GamePhase
@@ -77,10 +78,22 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(line1)
 
         # Community Cards
-        self.community_cards_label = QLabel("Community Cards: [ ] [ ] [ ] [ ] [ ]")
-        self.community_cards_label.setObjectName("infoLabel")
-        self.community_cards_label.setAlignment(Qt.AlignCenter)
-        left_layout.addWidget(self.community_cards_label)
+        self.community_cards_layout = QHBoxLayout()
+        self.community_cards_layout.setSpacing(10)
+        self.community_cards_layout.setAlignment(Qt.AlignCenter)
+        
+        # Create 5 slots for community cards
+        self.card_slots = []
+        for _ in range(5):
+            slot = QSvgWidget()
+            slot.setFixedSize(60, 84) # 200x280 ratio approx scaled down
+            # Initial placeholder style - can be done via stylesheet or loading an empty SVG
+            # For now, we'll leave them empty/black
+            slot.setStyleSheet("background-color: #222; border: 1px solid #444; border-radius: 4px;")
+            self.community_cards_layout.addWidget(slot)
+            self.card_slots.append(slot)
+            
+        left_layout.addLayout(self.community_cards_layout)
 
         # Pot Display
         self.pot_label = QLabel("Pot: 0")
@@ -239,14 +252,42 @@ class MainWindow(QMainWindow):
         self.update_mode_label()
 
     def on_cards_updated(self, cards):
-        # Format cards for display
+        """
+        Updates the UI to display the community cards using SVG assets.
+        Expects cards to be a list of Card objects.
+        """
+        # Format for log
         card_str = " ".join([f"[{str(c)}]" for c in cards])
-        current_text = self.community_cards_label.text()
-        # Append if not replacing (simple logic for now)
-        if "Community Cards:" in current_text:
-             # Basic display logic
-             self.community_cards_label.setText(f"Community Cards: {card_str}")
-        self.log_message(f"Cards dealt: {card_str}")
+        self.log_message(f"Cards updated: {card_str}")
+        
+        # Clear/Reset slots if needed (e.g. new hand)
+        # For now, we just overwrite from left to right
+        
+        for i, slot in enumerate(self.card_slots):
+            if i < len(cards):
+                card = cards[i]
+                # Construct filename: RankCode + SuitCode .svg (e.g. '10H.svg', 'AC.svg')
+                # Rank.code returns '2'-'9', 'T', 'J', 'Q', 'K', 'A'
+                # Suit.code returns 'H', 'D', 'C', 'S'
+                
+                # Note: Our asset generation used '10' not 'T', so we need to handle that mapping if Rank.code returns 'T'
+                r_code = card.rank.code
+                if r_code == 'T':
+                    r_code = '10'
+                    
+                filename = f"{r_code}{card.suit.code}.svg"
+                filepath = os.path.join("assets", filename)
+                
+                if os.path.exists(filepath):
+                    slot.load(filepath)
+                    slot.setStyleSheet("background-color: transparent; border: none;")
+                else:
+                    self.log_message(f"Error: Asset not found {filepath}")
+            else:
+                # Reset empty slots
+                slot.load(b"") # Clear SVG
+                slot.setStyleSheet("background-color: #222; border: 1px solid #444; border-radius: 4px;")
+
         self.update_mode_label()
 
     def on_turn_change(self, player):
