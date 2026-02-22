@@ -1,23 +1,18 @@
 import sys
 import rclpy
 from rclpy.node import Node
-from rclpy.action import ActionClient
 from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
                                QLabel, QDoubleSpinBox, QPushButton, QTabWidget, 
                                QSlider)
 from PySide6.QtCore import QTimer, Qt
 from std_msgs.msg import Float64MultiArray
-from poker_interfaces.msg import MotorFeedback
-
-from poker_interfaces.action import MovePose, MoveJoints
+from poker_interfaces.msg import TargetPose, MotorFeedback, TargetJoints
 
 class DashboardNode(Node):
     def __init__(self):
         super().__init__('dashboard_node')
-        
-        self.pose_client = ActionClient(self, MovePose, '/move_pose')
-        self.joints_client = ActionClient(self, MoveJoints, '/move_joints')
-        
+        self.pub_pose = self.create_publisher(TargetPose, '/target_pose', 10)
+        self.pub_joints = self.create_publisher(TargetJoints, '/target_joints', 10)
         self.sub_feedback = self.create_subscription(MotorFeedback, '/motor_feedback', self.feedback_cb, 10)
         self.sub_ik = self.create_subscription(Float64MultiArray, '/ik_solution', self.ik_cb, 10)
         
@@ -28,44 +23,28 @@ class DashboardNode(Node):
         self.feedback_data = msg.positions
 
     def ik_cb(self, msg):
+        # Callback when controller publishes calculated angles
         self.latest_ik = msg.data
 
     def send_pose(self, x, y, z, p, r, t):
-        if not self.pose_client.wait_for_server(timeout_sec=0.5):
-            self.get_logger().error('Pose Action Server not available!')
-            return False
-
-        goal_msg = MovePose.Goal()
-        goal_msg.x = x
-        goal_msg.y = y
-        goal_msg.z = z
-        goal_msg.pitch = p
-        goal_msg.roll = r
-        goal_msg.duration = t
-        
-        self.get_logger().info('Sending Pose Goal...')
-        self.pose_client.send_goal_async(goal_msg)
-        return True
+        msg = TargetPose()
+        msg.x, msg.y, msg.z = x, y, z
+        msg.pitch, msg.roll = p, r
+        msg.duration = t
+        self.pub_pose.publish(msg)
 
     def send_joints(self, joints, duration):
-        if not self.joints_client.wait_for_server(timeout_sec=0.5):
-            self.get_logger().error('Joints Action Server not available!')
-            return False
-
-        goal_msg = MoveJoints.Goal()
-        goal_msg.joints = [float(j) for j in joints]
-        goal_msg.duration = duration
-        
-        self.get_logger().info('Sending Joints Goal...')
-        self.joints_client.send_goal_async(goal_msg)
-        return True
+        msg = TargetJoints()
+        msg.joints = [float(j) for j in joints]
+        msg.duration = duration
+        self.pub_joints.publish(msg)
 
 class DashboardWidget(QWidget):
     def __init__(self, ros_node):
         super().__init__()
         self.node = ros_node
         self.setWindowTitle("Poker Arm Dashboard")
-        self.resize(450, 550) 
+        self.resize(450, 550) # Made slightly wider
         
         main_layout = QVBoxLayout()
         
@@ -99,6 +78,7 @@ class DashboardWidget(QWidget):
             h.addWidget(QLabel(lbl))
             spin = QDoubleSpinBox()
             
+            # --- FIX: Custom Range for Duration ---
             if 'Duration' in lbl:
                 spin.setRange(0.1, 60.0)
             else:
@@ -110,6 +90,7 @@ class DashboardWidget(QWidget):
             h.addWidget(spin)
             layout.addLayout(h)
         
+        # --- NEW: IK Result Label ---
         self.lbl_ik_result = QLabel("Calculated IK: [None]")
         self.lbl_ik_result.setWordWrap(True)
         layout.addWidget(self.lbl_ik_result)
@@ -163,19 +144,13 @@ class DashboardWidget(QWidget):
 
     def on_move_cartesian(self):
         vals = [s.value() for s in self.cart_inputs.values()]
-        success = self.node.send_pose(*vals)
-        if success:
-            self.lbl_status.setText("Status: Sending Cartesian Goal...")
-        else:
-            self.lbl_status.setText("Status: Action Server Offline!")
+        self.node.send_pose(*vals)
+        self.lbl_status.setText(f"Status: Sending Cartesian Target...")
 
     def on_move_joints(self):
         joints = [s.value() for s in self.spinboxes]
-        success = self.node.send_joints(joints, 10.0)
-        if success:
-            self.lbl_status.setText("Status: Sending Joint Goal...")
-        else:
-            self.lbl_status.setText("Status: Action Server Offline!")
+        self.node.send_joints(joints, 10.0)
+        self.lbl_status.setText("Status: Sending Joint Command...")
 
     def spin_ros(self):
         if not rclpy.ok():

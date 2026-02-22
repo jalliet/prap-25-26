@@ -8,7 +8,6 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 
 def generate_launch_description():
-    
     # --- Arguments ---
     mode_arg = DeclareLaunchArgument(
         'mode', 
@@ -28,19 +27,20 @@ def generate_launch_description():
     
     mode = LaunchConfiguration('mode')
     port = LaunchConfiguration('port')
+    use_sim_time = PythonExpression(["'", mode, "' == 'sim'"])
     dashboard_only = LaunchConfiguration('dashboard_only')
 
     # --- Paths ---
     lerobot_pkg = get_package_share_directory('lerobot_description')
     
     # --- 1. Simulation Environment (Gazebo) ---
-    # Only launch if mode == 'sim' AND we are not just running the dashboard
+    # Launch for sim OR digital twin (any mode except pi_hardware_headless)
     gazebo_sim = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(lerobot_pkg, 'launch', 'so101_gazebo.launch.py')
         ),
         condition=IfCondition(
-            PythonExpression(["'", mode, "' == 'sim' and '", dashboard_only, "' == 'false'"])
+            PythonExpression(["'", mode, "' != 'pi_hardware_headless' and '", dashboard_only, "' == 'false'"])
         )
     )
 
@@ -60,6 +60,7 @@ def generate_launch_description():
         package='poker_control',
         executable='controller',
         output='screen',
+        parameters=[{'use_sim_time': use_sim_time}], # <--- ADD THIS LINE
         condition=UnlessCondition(dashboard_only)
     )
 
@@ -74,34 +75,34 @@ def generate_launch_description():
         )
     )
 
-    # --- 5. Simulation Bridge (Sim Mode) ---
-    # Run if sim AND NOT dashboard_only
+    # --- 5. Simulation Bridge (Sim Mode & Digital Twin) ---
+    # Run if Gazebo is running (so we can bridge commands to it)
     sim_bridge_node = Node(
         package='poker_control',
         executable='sim_bridge',
+        parameters=[{'mode': mode, 'use_sim_time': use_sim_time}],
         condition=IfCondition(
-            PythonExpression(["'", mode, "' == 'sim' and '", dashboard_only, "' == 'false'"])
+            PythonExpression(["'", mode, "' != 'pi_hardware_headless' and '", dashboard_only, "' == 'false'"])
         )
     )
 
-    # --- 6. Controller Spawners (Sim Mode) ---
-    # Activate the controllers in Gazebo
+    # --- 6. Controller Spawners (Gazebo Controllers) ---
+    # Activate the controllers in Gazebo (Needed whenever Gazebo runs)
     joint_state_broadcaster = Node(
         package='controller_manager',
         executable='spawner',
         arguments=['joint_state_broadcaster', '--controller-manager', '/controller_manager'],
         condition=IfCondition(
-            PythonExpression(["'", mode, "' == 'sim' and '", dashboard_only, "' == 'false'"])
+            PythonExpression(["'", mode, "' != 'pi_hardware_headless' and '", dashboard_only, "' == 'false'"])
         )
     )
 
-    # UPDATED: Spawn forward_position_controller instead of joint_trajectory_controller
     forward_position_controller = Node(
         package='controller_manager',
         executable='spawner',
         arguments=['forward_position_controller', '--controller-manager', '/controller_manager'],
         condition=IfCondition(
-            PythonExpression(["'", mode, "' == 'sim' and '", dashboard_only, "' == 'false'"])
+            PythonExpression(["'", mode, "' != 'pi_hardware_headless' and '", dashboard_only, "' == 'false'"])
         )
     )
 

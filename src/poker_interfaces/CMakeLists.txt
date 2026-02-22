@@ -7,14 +7,16 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
-find_package(builtin_interfaces REQUIRED) 
+find_package(action_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/TargetPose.msg"
   "msg/ServoCommand.msg"
   "msg/MotorFeedback.msg"
   "msg/TargetJoints.msg"
-  DEPENDENCIES builtin_interfaces
+  "action/MoveJoints.action"
+  "action/MovePose.action"
+  DEPENDENCIES action_msgs
 )
 
 ament_export_dependencies(rosidl_default_runtime)

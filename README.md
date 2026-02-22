@@ -26,7 +26,7 @@ The system leverages **CasADi** for high-performance symbolic kinematics (FK, IK
 ### Critical ROS Dependencies
 While `rosdep` handles most packages, you must explicitly install the simulation bridges and GUI tools:
 ```bash
-sudo apt install ros-humble-ign-ros2-control ros-humble-ros2-controllers ros-humble-joint-state-publisher-gui
+sudo apt install python3-pip ros-humble-ign-ros2-control ros-humble-ros2-controllers ros-humble-joint-state-publisher-gui
 
 ```
 
@@ -66,8 +66,24 @@ rosdep update
 rosdep install --from-paths src --ignore-src -r -y
 
 ```
+### 4. Create Virtual Environment
 
-### 4. Install Python Dependencies
+To prevent python version and permission issues, it is best to build the workspace from a virtual environment.
+
+```bash
+cd ~/poker_arm_ws
+python3 -m venv .venv
+```
+
+Then, we activate the virtual environment. This must be called *every* time, or can be added to the bash.
+```bash
+./.venv/Scripts/activate
+export PYTHONPATH=~/poker_arm_ws/venv/lib/<PYTHON_VERSION>/site-packages:$PYTHONPATH
+```
+NB: replace <PYTHON_VERSION> with your actual python version. Here, we use 3.12.
+
+
+### 5. Install Python Dependencies
 
 The kinematic solver relies on specific Python libraries.
 
@@ -77,7 +93,7 @@ pip3 install -r requirements.txt
 
 ```
 
-### 5. Build the Workspace
+### 6. Build the Workspace
 
 Build the packages using `colcon`:
 
@@ -87,7 +103,7 @@ colcon build --symlink-install
 
 ```
 
-### 6. Source the Environment
+### 7. Source the Environment
 
 Source the workspace overlay:
 
@@ -99,7 +115,7 @@ source install/setup.bash
 > **Tip:** Add the following line to your `~/.bashrc` for convenience:
 > ```bash
 > source ~/poker_arm_ws/install/setup.bash
-> 
+> ~/poker_arm_ws/.venv/Scripts/activate
 > ```
 
 ### 7. Configure USB Latency (Critical for Hardware)
