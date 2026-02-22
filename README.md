@@ -22,9 +22,10 @@ The system leverages **CasADi** for high-performance symbolic kinematics (FK, IK
 * **OS:** Ubuntu 22.04 (Jammy Jellyfish) or 24.04 (Noble Numbat)
 * **ROS 2 Distribution:** Humble Hawksbill or Jazzy Jalisco
 * **Python:** 3.10+
+NB: Using this package with WSL2 can cause problems when interfacing with the robot, as it is difficult to give it access to the ports.
 
 ### Critical ROS Dependencies
-While `rosdep` handles most packages, you must explicitly install the simulation bridges and GUI tools:
+While `rosdep` handles most packages, you must explicitly install the python3, simulation bridges, and GUI tools:
 ```bash
 sudo apt install python3-pip ros-humble-ign-ros2-control ros-humble-ros2-controllers ros-humble-joint-state-publisher-gui
 
