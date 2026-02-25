@@ -88,8 +88,11 @@ class VisionController(QObject):
         # Update internal polling timer
         self._poll_timer.setInterval(1000 // fps)
         
-        # TODO: Propagate to CameraService if it supports dynamic reconfiguration
-        # self.camera_service.set_fps(fps) 
+        # Propagate to CameraService if it supports dynamic reconfiguration
+        try:
+            self.camera_service.set_fps(fps)
+        except Exception as e:
+            print(f"VisionController: failed to set camera fps: {e}")
 
     def connect_to_game_state(self, game_state: GameState):
         """
