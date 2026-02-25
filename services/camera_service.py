@@ -157,6 +157,32 @@ class CameraService:
         
         return None
 
+    def set_fps(self, fps: int):
+        """
+        Sends a CameraControl message to the device to update the sensor FPS dynamically.
+        If the device/control queue is not available, update the config so callers
+        can still see the intended FPS.
+        """
+        try:
+            fps = int(fps)
+        except Exception:
+            print(f"Invalid fps value: {fps}")
+            return
+
+        # Always update local config so software components reflect desired FPS
+        self.config.fps = fps
+
+        if not self.running or self.control_queue is None:
+            # Device not running or no control channel; nothing to send
+            return
+
+        try:
+            ctrl = dai.CameraControl()
+            ctrl.setFrameRate(fps)
+            self.control_queue.send(ctrl)
+        except Exception as e:
+            print(f"Failed to set fps on device: {e}")
+
 if __name__ == "__main__":
     service = CameraService()
     service.start()
