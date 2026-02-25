@@ -4,6 +4,9 @@ from services.camera_service import CameraService, CameraConfig
 from enum import Enum, auto
 from poker.game_state import GameState, GamePhase
 
+from PySide6.QtCore import QObject, Signal, QThread
+import numpy as np
+
 class VisionMode(Enum):
     """
     Operational modes for the Vision Controller.
@@ -16,7 +19,7 @@ class VisionMode(Enum):
     CHIP_SEGMENTATION = auto() # Side-view analysis for chip stack estimation (Future).
     IDLE = auto()             # Camera active but no heavy processing.
 
-class VisionController:
+class VisionController(QObject):
     """
     Singleton controller for managing camera services and orchestrating vision processing.
     
@@ -25,9 +28,16 @@ class VisionController:
     resource usage and data accuracy.
     """
     _instance = None
+    
+    # Signals for UI integration
+    frame_ready = Signal(np.ndarray)
 
     def __new__(cls):
         if cls._instance is None:
+            # Note: Inheriting QObject changes __new__ behavior slightly, 
+            # but for a singleton pattern we need to be careful.
+            # Ideally QObject shouldn't be a singleton if it has parent/thread affinity issues.
+            # However, for this scope, we'll keep the singleton pattern but ensure QObject init is called.
             cls._instance = super(VisionController, cls).__new__(cls)
             cls._instance._initialized = False
         return cls._instance
@@ -35,6 +45,9 @@ class VisionController:
     def __init__(self):
         if self._initialized:
             return
+            
+        # Initialise QObject
+        super().__init__()
         
         # Initialise Camera Service with default configuration
         # In a production system, this config might be loaded from a file
@@ -45,6 +58,41 @@ class VisionController:
         
         # Callbacks for processing results
         self.on_frame_processed: Optional[Callable] = None 
+        
+        # Thread for processing loop to avoid blocking UI
+        # For simplicity in this iteration, we might use a QTimer or just run in main thread if fast enough.
+        # But to be "Agent-Centric" and robust, we should ideally use a worker thread.
+        # Let's keep it simple first: Use a QTimer internally to poll camera service
+        # This replaces the UI timer, keeping the polling logic encapsulated here.
+        from PySide6.QtCore import QTimer
+        self._poll_timer = QTimer()
+        self._poll_timer.timeout.connect(self.process_frame)
+        # Default polling rate - can be updated via set_fps
+        self._poll_timer.setInterval(1000 // self.camera_service.config.fps)
+
+    @property
+    def fps(self) -> int:
+        """
+        Returns the configured FPS of the underlying camera service.
+        This allows the UI to synchronise its update rate with the hardware capabilities.
+        """
+        return self.camera_service.config.fps
+        
+    def set_fps(self, fps: int):
+        """
+        Updates the polling rate and attempts to update camera hardware FPS.
+        """
+        if fps < 1: return
+        
+        print(f"VisionController: Setting FPS to {fps}")
+        # Update internal polling timer
+        self._poll_timer.setInterval(1000 // fps)
+        
+        # Propagate to CameraService if it supports dynamic reconfiguration
+        try:
+            self.camera_service.set_fps(fps)
+        except Exception as e:
+            print(f"VisionController: failed to set camera fps: {e}")
 
     def connect_to_game_state(self, game_state: GameState):
         """
@@ -96,11 +144,13 @@ class VisionController:
         if not self.is_running:
             self.camera_service.start()
             self.is_running = True
+            self._poll_timer.start()
             print("VisionController started.")
 
     def stop(self):
         """Stops the camera service and processing loop."""
         if self.is_running:
+            self._poll_timer.stop()
             self.camera_service.stop()
             self.is_running = False
             print("VisionController stopped.")
@@ -159,6 +209,9 @@ class VisionController:
              # TODO: Integrate ChipSegmentor
              pass
             
-        # Emit/Return result
+        # Emit Signal for UI
+        self.frame_ready.emit(frame)
+        
+        # Legacy Callback (deprecated, prefer signals)
         if self.on_frame_processed:
             self.on_frame_processed(frame)

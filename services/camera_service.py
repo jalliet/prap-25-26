@@ -45,6 +45,7 @@ class CameraService:
         self.running = False
         self.device: Optional[dai.Device] = None
         self.queue: Optional[dai.DataOutputQueue] = None
+        self.control_queue: Optional[dai.DataInputQueue] = None
         
     def _create_pipeline(self) -> dai.Pipeline:
         """
@@ -77,6 +78,12 @@ class CameraService:
         cam_rgb.setColorOrder(dai.ColorCameraProperties.ColorOrder.BGR) # OpenCV uses BGR
         cam_rgb.setFps(self.config.fps)
 
+        # Input control stream for dynamic CameraControl messages (e.g., setFrameRate)
+        input_control = pipeline.create(dai.node.XLinkIn)
+        input_control.setStreamName("inputControl")
+        # Link host input to camera's inputControl port so we can send CameraControl messages
+        input_control.out.link(cam_rgb.inputControl)
+
         # Link the Camera's preview output to the XLink input
         # Flow: Sensor -> ColorCamera Node -> Preview Output -> XLinkOut Node -> USB -> Host
         cam_rgb.preview.link(xout_rgb.input)
@@ -104,6 +111,12 @@ class CameraService:
                 maxSize=4, 
                 blocking=False
             )
+            # Expose input queue for control messages
+            try:
+                self.control_queue = self.device.getInputQueue(name="inputControl")
+            except Exception:
+                # If device doesn't expose input queue, keep control_queue as None
+                self.control_queue = None
             
             self.running = True
             print("Camera Service started successfully.")
@@ -143,6 +156,32 @@ class CameraService:
             print(f"Error retrieving frame: {e}")
         
         return None
+
+    def set_fps(self, fps: int):
+        """
+        Sends a CameraControl message to the device to update the sensor FPS dynamically.
+        If the device/control queue is not available, update the config so callers
+        can still see the intended FPS.
+        """
+        try:
+            fps = int(fps)
+        except Exception:
+            print(f"Invalid fps value: {fps}")
+            return
+
+        # Always update local config so software components reflect desired FPS
+        self.config.fps = fps
+
+        if not self.running or self.control_queue is None:
+            # Device not running or no control channel; nothing to send
+            return
+
+        try:
+            ctrl = dai.CameraControl()
+            ctrl.setFrameRate(fps)
+            self.control_queue.send(ctrl)
+        except Exception as e:
+            print(f"Failed to set fps on device: {e}")
 
 if __name__ == "__main__":
     service = CameraService()
