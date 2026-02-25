@@ -45,6 +45,7 @@ class CameraService:
         self.running = False
         self.device: Optional[dai.Device] = None
         self.queue: Optional[dai.DataOutputQueue] = None
+        self.control_queue: Optional[dai.DataInputQueue] = None
         
     def _create_pipeline(self) -> dai.Pipeline:
         """
@@ -77,6 +78,12 @@ class CameraService:
         cam_rgb.setColorOrder(dai.ColorCameraProperties.ColorOrder.BGR) # OpenCV uses BGR
         cam_rgb.setFps(self.config.fps)
 
+        # Input control stream for dynamic CameraControl messages (e.g., setFrameRate)
+        input_control = pipeline.create(dai.node.XLinkIn)
+        input_control.setStreamName("inputControl")
+        # Link host input to camera's inputControl port so we can send CameraControl messages
+        input_control.out.link(cam_rgb.inputControl)
+
         # Link the Camera's preview output to the XLink input
         # Flow: Sensor -> ColorCamera Node -> Preview Output -> XLinkOut Node -> USB -> Host
         cam_rgb.preview.link(xout_rgb.input)
@@ -104,6 +111,12 @@ class CameraService:
                 maxSize=4, 
                 blocking=False
             )
+            # Expose input queue for control messages
+            try:
+                self.control_queue = self.device.getInputQueue(name="inputControl")
+            except Exception:
+                # If device doesn't expose input queue, keep control_queue as None
+                self.control_queue = None
             
             self.running = True
             print("Camera Service started successfully.")
