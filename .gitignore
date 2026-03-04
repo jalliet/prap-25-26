@@ -13,4 +13,9 @@ __pycache__/
 docs/PLAN_*.md
 
 # YOLO model weights (too large for git, use shared drive or Git LFS)
-*.pt
+*.ptbuild/
+install/
+log/
+src/log/
+build/
+vision/models
