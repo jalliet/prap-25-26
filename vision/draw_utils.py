@@ -15,12 +15,16 @@ _LABEL_TEXT_COLOUR = (255, 255, 255)  # White text
 
 
 def _format_label(detection: CardDetection) -> str:
-    """Build a display label like 'A♥ 0.95' from a CardDetection."""
+    """Build a display label like 'AH 0.95' from a CardDetection.
+
+    Uses ASCII codes (H, S, C, D) instead of Unicode suit symbols
+    because OpenCV's putText cannot render non-ASCII characters.
+    """
     rank = detection["rank"]
     suit = detection["suit"]
 
-    rank_str = str(rank) if rank is not None else "?"
-    suit_str = str(suit) if suit is not None else "?"
+    rank_str = rank.code if rank is not None else "?"
+    suit_str = suit.code if suit is not None else "?"
     conf = detection["confidence"]
 
     return f"{rank_str}{suit_str} {conf:.2f}"

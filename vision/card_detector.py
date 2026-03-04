@@ -73,8 +73,11 @@ class CardDetector(BaseDetector[List[CardDetection]]):
             return []
 
         results = self.model(image, verbose=False)
-        detections: List[CardDetection] = []
         img_h, img_w = image.shape[:2]
+
+        # Keep only the highest-confidence detection per unique card,
+        # since YOLO often detects both corners of the same card.
+        best: dict[tuple, CardDetection] = {}
 
         for result in results:
             if result.boxes is None:
@@ -88,20 +91,21 @@ class CardDetector(BaseDetector[List[CardDetection]]):
                 class_name = result.names.get(cls_id, "")
                 rank, suit = _parse_class_name(class_name)
 
-                # Normalised bounding box (xyxy → x,y,w,h normalised)
-                x1, y1, x2, y2 = box.xyxy[0].tolist()
-                bbox: BoundingBox = {
-                    "x": x1 / img_w,
-                    "y": y1 / img_h,
-                    "width": (x2 - x1) / img_w,
-                    "height": (y2 - y1) / img_h,
-                }
+                key = (rank, suit)
+                if key in best and best[key]["confidence"] >= conf:
+                    continue
 
-                detections.append({
+                x1, y1, x2, y2 = box.xyxy[0].tolist()
+                best[key] = {
                     "rank": rank,
                     "suit": suit,
                     "confidence": conf,
-                    "bbox": bbox,
-                })
+                    "bbox": {
+                        "x": x1 / img_w,
+                        "y": y1 / img_h,
+                        "width": (x2 - x1) / img_w,
+                        "height": (y2 - y1) / img_h,
+                    },
+                }
 
-        return detections
+        return list(best.values())
