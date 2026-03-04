@@ -2,7 +2,7 @@ source venv/bin/activate
 
 # Check Python version
 current_ver=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
-required_ver="3.11"
+required_ver="3.12"
 
 if [ "$current_ver" != "$required_ver" ]; then
     echo "❌ ERROR: Python version mismatch."
