@@ -6,6 +6,7 @@ from PySide6.QtCore import Qt, QTimer, QSize
 from PySide6.QtSvgWidgets import QSvgWidget
 from gui.utils import convert_cv_qt
 from services.vision_controller import VisionController, VisionMode
+from services.arm_ros_bridge import ArmRosBridge
 from poker.game_state import GameState, GamePhase
 from poker.player import Player
 
@@ -60,8 +61,13 @@ class MainWindow(QMainWindow):
         self.vision_controller = VisionController()
         
         # Connect Vision Controller to Game State
-        # This link allows the vision system to autonomously react to game phase changes
         self.vision_controller.connect_to_game_state(self.game_state)
+
+        # Initialise Arm Bridge (gracefully degrades if ROS 2 unavailable)
+        self.arm_bridge = ArmRosBridge()
+        self.vision_controller.connect_to_arm_bridge(self.arm_bridge)
+        self.arm_bridge.connection_changed.connect(self._on_arm_connection_changed)
+        self.arm_bridge.move_completed.connect(self._on_arm_move_completed)
         
         # Add some dummy players for testing purposes
         self.game_state.add_player(Player(0, "Hero", 0))
@@ -358,8 +364,19 @@ class MainWindow(QMainWindow):
         # (though ideally we'd have a signal for mode change too)
         self.update_mode_label()
 
+    def _on_arm_connection_changed(self, available: bool):
+        status = "Connected" if available else "Disconnected"
+        self.log_message(f"Arm Controller: {status}")
+
+    def _on_arm_move_completed(self, success: bool, final_error: float):
+        if success:
+            self.log_message(f"Arm move complete (error: {final_error:.3f} rad)")
+        else:
+            self.log_message(f"Arm move failed (error: {final_error:.3f})")
+
     def closeEvent(self, event):
         self.vision_controller.stop()
+        self.arm_bridge.shutdown()
         event.accept()
 
     def load_stylesheet(self):
