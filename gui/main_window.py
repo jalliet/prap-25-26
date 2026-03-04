@@ -402,7 +402,7 @@ class MainWindow(QMainWindow):
                     r_code = '10'
                     
                 filename = f"{r_code}{card.suit.code}.svg"
-                filepath = os.path.join("assets", filename)
+                filepath = os.path.join(os.path.dirname(__file__), "..", "assets", filename)
                 
                 if os.path.exists(filepath):
                     slot.load(filepath)

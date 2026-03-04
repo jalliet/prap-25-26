@@ -8,7 +8,6 @@ application continues to function for camera and poker logic only.
 from __future__ import annotations
 import logging
 from typing import Optional, Callable
-from dataclasses import dataclass
 
 from PySide6.QtCore import QObject, Signal, QTimer
 
@@ -25,24 +24,6 @@ try:
 except ImportError:
     _ROS_AVAILABLE = False
     Node = object  # stub for class inheritance
-
-
-@dataclass
-class PoseTarget:
-    """Plain Python representation of a Cartesian arm target."""
-    x: float
-    y: float
-    z: float
-    pitch: float
-    roll: float
-    duration: float
-
-
-@dataclass
-class JointTarget:
-    """Plain Python representation of a joint-space arm target."""
-    joints: list  # 6 values in radians
-    duration: float
 
 
 class _ArmRosNode(Node):
