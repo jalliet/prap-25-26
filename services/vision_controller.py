@@ -1,5 +1,5 @@
 import cv2
-from typing import Optional, Callable
+from typing import Optional
 from services.camera_service import CameraService, CameraConfig
 from enum import Enum, auto
 from poker.game_state import GameState, GamePhase
@@ -8,6 +8,7 @@ from vision.chip_segmentor import ChipSegmentor
 from vision.hand_detector import HandDetector
 
 from PySide6.QtCore import QObject, Signal, QThread
+from vision.draw_utils import draw_card_detections
 import numpy as np
 
 class VisionMode(Enum):
@@ -34,6 +35,7 @@ class VisionController(QObject):
 
     # Signals for UI integration
     frame_ready = Signal(np.ndarray)
+    cards_detected = Signal(list)  # Emits List[CardDetection] each frame in CARD_READING mode
 
     def __new__(cls):
         if cls._instance is None:
@@ -54,11 +56,11 @@ class VisionController(QObject):
         self.is_running = False
         self._initialized = True
 
-        # Callbacks for processing results
-        self.on_frame_processed: Optional[Callable] = None
-
         # Arm bridge (connected externally via connect_to_arm_bridge)
         self.arm_bridge = None
+
+        # Dedup: only emit cards_detected when the detected set changes
+        self._last_card_set: frozenset = frozenset()
 
         # Initialise detectors
         self.card_detector = CardDetector(
@@ -203,7 +205,15 @@ class VisionController(QObject):
 
         elif self.mode == VisionMode.CARD_READING:
             detections = self.card_detector.process(frame)
-            # Future: map detected cards to GameState
+            draw_card_detections(frame, detections)
+            # Only emit signal when the set of detected cards changes
+            current_set = frozenset(
+                (d["rank"], d["suit"]) for d in detections
+                if d["rank"] is not None and d["suit"] is not None
+            )
+            if current_set != self._last_card_set:
+                self._last_card_set = current_set
+                self.cards_detected.emit(detections)
 
         elif self.mode == VisionMode.CHIP_SEGMENTATION:
             result = self.chip_segmentor.process(frame)
@@ -211,7 +221,3 @@ class VisionController(QObject):
 
         # Emit Signal for UI
         self.frame_ready.emit(frame)
-
-        # Legacy Callback (deprecated, prefer signals)
-        if self.on_frame_processed:
-            self.on_frame_processed(frame)

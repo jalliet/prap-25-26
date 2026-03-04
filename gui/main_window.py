@@ -175,7 +175,11 @@ class MainWindow(QMainWindow):
         self.btn_bet_test = QPushButton("Test Bet")
         self.btn_bet_test.clicked.connect(self.bet_test)
         controls_layout.addWidget(self.btn_bet_test)
-        
+
+        self.btn_toggle_detection = QPushButton("Toggle Card Detection")
+        self.btn_toggle_detection.clicked.connect(self.toggle_card_detection)
+        controls_layout.addWidget(self.btn_toggle_detection)
+
         left_layout.addWidget(controls_group)
 
         # Right Panel (Camera Feed)
@@ -241,7 +245,8 @@ class MainWindow(QMainWindow):
         
         # Connect Vision Controller Signals
         self.vision_controller.frame_ready.connect(self.update_frame)
-        
+        self.vision_controller.cards_detected.connect(self._on_cards_detected)
+
         # Start Service
         self.vision_controller.start()
         
@@ -273,6 +278,26 @@ class MainWindow(QMainWindow):
                 self.log_message(f"Error: {e}")
             self.update_player_list()
 
+    def toggle_card_detection(self):
+        """Toggle between CARD_READING and IDLE vision modes."""
+        if self.vision_controller.mode == VisionMode.CARD_READING:
+            self.vision_controller.set_mode(VisionMode.IDLE)
+            self.log_message("Card detection OFF")
+        else:
+            self.vision_controller.set_mode(VisionMode.CARD_READING)
+            self.log_message("Card detection ON")
+        self.update_mode_label()
+
+    def _on_cards_detected(self, detections):
+        """Handle card detection results. Only called when detected set changes."""
+        valid = [d for d in detections if d["rank"] is not None and d["suit"] is not None]
+        if valid:
+            valid.sort(key=lambda d: d["bbox"]["x"])
+            card_strs = [f"{d['rank']}{d['suit']}" for d in valid]
+            self.log_message(f"Detected: {', '.join(card_strs)}")
+        else:
+            self.log_message("No cards detected")
+
     def update_player_list(self):
         self.player_list.clear()
         for p in self.game_state.players:
@@ -287,7 +312,6 @@ class MainWindow(QMainWindow):
     def on_pot_change(self, total: int):
         self.pot_label.setText(f"Pot: {total}")
         self.log_message(f"Pot updated: {total}")
-        self.update_mode_label()
 
     def on_cards_updated(self, cards):
         """
@@ -326,27 +350,23 @@ class MainWindow(QMainWindow):
                 slot.load(b"") # Clear SVG
                 slot.setStyleSheet(self.config.card_slot.empty_style)
 
-        self.update_mode_label()
-
     def on_turn_change(self, player):
         if player:
             self.log_message(f"Turn: {player.name}")
             # Highlight player in list (optional)
 
+    _MODE_COLOURS = {
+        VisionMode.HAND_MONITORING: "#00FF00",   # Green
+        VisionMode.CARD_READING: "#00FFFF",      # Cyan
+        VisionMode.CHIP_SEGMENTATION: "#FFA500", # Orange
+    }
+
     def update_mode_label(self):
         """Updates the vision mode indicator."""
-        mode_name = self.vision_controller.mode.name
-        self.mode_label.setText(f"Mode: {mode_name}")
-        
-        # Simple colour coding
-        if mode_name == "HAND_MONITORING":
-            self.mode_label.setStyleSheet("font-weight: bold; color: #00FF00;") # Green
-        elif mode_name == "CARD_READING":
-            self.mode_label.setStyleSheet("font-weight: bold; color: #00FFFF;") # Cyan
-        elif mode_name == "CHIP_SEGMENTATION":
-            self.mode_label.setStyleSheet("font-weight: bold; color: #FFA500;") # Orange
-        else:
-            self.mode_label.setStyleSheet("font-weight: bold; color: yellow;")
+        mode = self.vision_controller.mode
+        self.mode_label.setText(f"Mode: {mode.name}")
+        colour = self._MODE_COLOURS.get(mode, "yellow")
+        self.mode_label.setStyleSheet(f"font-weight: bold; color: {colour};")
 
     def log_message(self, message):
         self.log_area.append(message)
@@ -359,10 +379,6 @@ class MainWindow(QMainWindow):
         if frame is not None:
             qt_img = convert_cv_qt(frame)
             self.camera_feed.setPixmap(qt_img)
-            
-        # Periodically check/update mode label just in case controller changed it internally
-        # (though ideally we'd have a signal for mode change too)
-        self.update_mode_label()
 
     def _on_arm_connection_changed(self, available: bool):
         status = "Connected" if available else "Disconnected"
