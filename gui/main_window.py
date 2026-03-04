@@ -13,6 +13,8 @@ from poker.player import Player
 from poker.action import Action, ActionType
 from dataclasses import dataclass
 from typing import Tuple
+import subprocess
+import signal
 
 @dataclass(frozen=True)
 class WindowConfig:
@@ -69,6 +71,8 @@ class MainWindow(QMainWindow):
         self.arm_bridge.connection_changed.connect(self._on_arm_connection_changed)
         self.arm_bridge.move_completed.connect(self._on_arm_move_completed)
         
+        # Simulation process handle (set when user starts the sim)
+        self.sim_process = None
         # Add some dummy players for testing purposes
         self.game_state.add_player(Player(0, "Hero", 0))
         self.game_state.add_player(Player(1, "Villain 1", 1))
@@ -179,6 +183,15 @@ class MainWindow(QMainWindow):
         self.btn_toggle_detection = QPushButton("Toggle Card Detection")
         self.btn_toggle_detection.clicked.connect(self.toggle_card_detection)
         controls_layout.addWidget(self.btn_toggle_detection)
+
+        # Simulation controls
+        self.btn_start_sim = QPushButton("Start Simulation")
+        self.btn_start_sim.clicked.connect(self.start_simulation)
+        controls_layout.addWidget(self.btn_start_sim)
+
+        self.btn_stop_sim = QPushButton("Stop Simulation")
+        self.btn_stop_sim.clicked.connect(self.stop_simulation)
+        controls_layout.addWidget(self.btn_stop_sim)
 
         left_layout.addWidget(controls_group)
 
@@ -307,7 +320,58 @@ class MainWindow(QMainWindow):
         self.phase_label.setText(f"Phase: {phase.name}")
         self.log_message(f"Game Phase: {phase.name}")
         self.update_player_list()
-        self.update_mode_label()
+
+    def start_simulation(self):
+        """Start the ROS2/Gazebo simulation by launching the bringup launch file.
+
+        This runs a bash subshell that sources the local `install/setup.bash`
+        (if present) so the workspace and ROS 2 environment are available.
+        The launched process is stored so we can stop it later.
+        """
+        if self.sim_process is not None:
+            self.log_message("Simulation already running")
+            return
+
+        # Construct command: source workspace then launch poker_bringup
+        workspace_setup = os.path.join(os.getcwd(), "install", "setup.bash")
+        if os.path.exists(workspace_setup):
+            cmd = f"bash -lc 'source {workspace_setup} && ros2 launch poker_bringup poker_arm.launch.py mode:=sim'"
+        else:
+            # Fallback to attempting a direct ros2 launch (user must have ROS sourced externally)
+            cmd = "bash -lc 'ros2 launch poker_bringup poker_arm.launch.py mode:=sim'"
+
+        try:
+            # Start in its own process group so we can terminate whole group later
+            self.sim_process = subprocess.Popen(cmd, shell=True, preexec_fn=os.setsid,
+                                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            self.log_message("Started simulation (ros2 launch)")
+        except Exception as e:
+            self.log_message(f"Failed to start simulation: {e}")
+
+    def stop_simulation(self):
+        """Terminate the simulation process started with `start_simulation`.
+
+        Sends SIGINT to the process group then SIGTERM if needed.
+        """
+        if self.sim_process is None:
+            self.log_message("No simulation process to stop")
+            return
+
+        try:
+            os.killpg(self.sim_process.pid, signal.SIGINT)
+        except Exception:
+            pass
+
+        try:
+            self.sim_process.wait(timeout=5)
+        except Exception:
+            try:
+                os.killpg(self.sim_process.pid, signal.SIGTERM)
+            except Exception:
+                pass
+
+        self.sim_process = None
+        self.log_message("Simulation stopped")
 
     def on_pot_change(self, total: int):
         self.pot_label.setText(f"Pot: {total}")
@@ -391,6 +455,12 @@ class MainWindow(QMainWindow):
             self.log_message(f"Arm move failed (error: {final_error:.3f})")
 
     def closeEvent(self, event):
+        # Stop simulation if running
+        try:
+            self.stop_simulation()
+        except Exception:
+            pass
+
         self.vision_controller.stop()
         self.arm_bridge.shutdown()
         event.accept()

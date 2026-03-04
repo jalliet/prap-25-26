@@ -14,3 +14,15 @@ docs/PLAN_*.md
 
 # YOLO model weights (too large for git, use shared drive or Git LFS)
 *.pt
+
+# ROS 2 build artifacts
+build/
+install/
+log/
+src/log/
+
+# Vision model weights directory
+vision/models
+
+# Simulation artifacts
+debug_robot.urdf
