@@ -63,9 +63,16 @@ Core game logic in `poker/` — card/deck management, chip stacks, player state,
 
 ### Vision System
 Computer vision detectors in `vision/` using YOLOv8 models:
-- **Card Detector** — identifies playing cards using `vision/models/Card_detection_large_best.pt`
+- **Card Detector** — identifies playing cards using `vision/models/Card_detection_large_best.pt`. Live detection can be toggled from the dashboard via the "Toggle Card Detection" button, which overlays bounding boxes and labels on the camera feed.
 - **Chip Segmentor** — counts chips by colour using `vision/models/Chip_segmentation_large_best.pt`
 - **Hand Detector** — player hand tracking (stub, model TBD)
+
+Model weights are gitignored. Place them in `vision/models/`:
+```
+vision/models/Card_detection_large_best.pt
+vision/models/Chip_segmentation_large_best.pt
+```
+If weights are missing, detectors run in dummy mode (no inference, no errors).
 
 ### Arm Controller (ROS 2)
 ROS 2 stack for the SO101 robot arm on the `feature/arm_controller` branch:
@@ -79,21 +86,48 @@ ROS 2 stack for the SO101 robot arm on the `feature/arm_controller` branch:
 
 ## Running
 
+### Dashboard Only
 ```bash
-# Start the dashboard
+# Start the dashboard (camera feed, card detection, game state)
 python main.py
 
-# Run tests
-python -m pytest tests/ -v
+# Or use the helper script (checks Python version)
+bash scripts/start_game.sh
 ```
 
-### With ROS 2 Arm (optional)
+### Dashboard Features
+- **Toggle Card Detection** — enables live YOLOv8 card detection with bounding box overlays on the camera feed. Detections are logged in the game log.
+- **Start/Stop Simulation** — launches or stops the ROS 2 Gazebo simulation (`ros2 launch poker_bringup poker_arm.launch.py mode:=sim`) directly from the GUI.
+- **Start Hand / Test Bet** — manual triggers for testing game state transitions.
+
+### With ROS 2 Simulation
+Requires a built ROS 2 workspace with the `poker_bringup` package.
+
 ```bash
-# Terminal 1: Start mock arm server (for testing without hardware)
+# Build the ROS 2 workspace (once)
+colcon build
+
+# Option 1: Launch simulation from the GUI
+python main.py
+# Then click "Start Simulation" in the dashboard
+
+# Option 2: Launch simulation manually
+source install/setup.bash
+ros2 launch poker_bringup poker_arm.launch.py mode:=sim
+```
+
+### With Mock Arm Server (no ROS 2 needed)
+```bash
+# Terminal 1: Start mock arm server
 python scripts/mock_arm_server.py
 
 # Terminal 2: Start dashboard
 python main.py
+```
+
+### Running Tests
+```bash
+python -m pytest tests/ -v
 ```
 
 ## Chip Denominations
