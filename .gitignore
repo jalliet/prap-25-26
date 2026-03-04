@@ -18,4 +18,5 @@ install/
 log/
 src/log/
 build/
-vision/modelsdebug_robot.urdf
+vision/models
+debug_robot.urdf
