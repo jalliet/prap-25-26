@@ -9,4 +9,8 @@ __pycache__/
 .DS_Store
 .trae
 *.log
+.pytest_cache/
 docs/PLAN_*.md
+
+# YOLO model weights (too large for git, use shared drive or Git LFS)
+*.pt
