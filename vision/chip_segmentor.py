@@ -33,32 +33,8 @@ class ChipSegmentor(BaseDetector[ChipSegmentationResult]):
     """
 
     def __init__(self, model_path: Optional[str] = None, confidence_threshold: float = 0.5):
-        """
-        Initialise the chip segmentor.
-
-        Args:
-            model_path: Path to local YOLO segmentation model weights.
-            confidence_threshold: Minimum confidence to include a detection (0.0 to 1.0).
-        """
-        self.model_path = model_path
-        self.confidence_threshold = confidence_threshold
-        self.model = None
-        self._load_model()
-
-    def _load_model(self):
-        """Loads the YOLO segmentation model from the local filesystem."""
-        if not self.model_path:
-            print("ChipSegmentor: Initialised in dummy mode.")
-            return
-
-        try:
-            from ultralytics import YOLO
-            self.model = YOLO(self.model_path)
-            print(f"ChipSegmentor: Loaded model from {self.model_path}")
-        except ImportError:
-            print("ChipSegmentor: ultralytics not installed. Running in dummy mode.")
-        except Exception as e:
-            print(f"ChipSegmentor: Failed to load model ({e}). Running in dummy mode.")
+        super().__init__(model_path, confidence_threshold)
+        self._load_yolo_model()
 
     def process(self, image: np.ndarray) -> ChipSegmentationResult:
         """

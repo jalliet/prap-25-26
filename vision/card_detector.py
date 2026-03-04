@@ -1,17 +1,8 @@
 import numpy as np
 from typing import List, Optional, TypedDict
-from vision.base_detector import BaseDetector
+from vision.base_detector import BaseDetector, BoundingBox
 from poker.card import Rank, Suit
 
-class BoundingBox(TypedDict):
-    """
-    Coordinates representing a rectangular region in the image.
-    Values are normalised (0.0 to 1.0) relative to image dimensions.
-    """
-    x: float
-    y: float
-    width: float
-    height: float
 
 class CardDetection(TypedDict):
     """
@@ -65,32 +56,8 @@ class CardDetector(BaseDetector[List[CardDetection]]):
     """
 
     def __init__(self, model_path: Optional[str] = None, confidence_threshold: float = 0.5):
-        """
-        Initialise the card detector.
-
-        Args:
-            model_path: Path to the local YOLO model weights. If None, runs in dummy mode.
-            confidence_threshold: Minimum confidence to include a detection (0.0 to 1.0).
-        """
-        self.model_path = model_path
-        self.confidence_threshold = confidence_threshold
-        self.model = None
-        self._load_model()
-
-    def _load_model(self):
-        """Loads the YOLO model weights from the local filesystem."""
-        if not self.model_path:
-            print("CardDetector: Initialised in dummy mode.")
-            return
-
-        try:
-            from ultralytics import YOLO
-            self.model = YOLO(self.model_path)
-            print(f"CardDetector: Loaded model from {self.model_path}")
-        except ImportError:
-            print("CardDetector: ultralytics not installed. Running in dummy mode.")
-        except Exception as e:
-            print(f"CardDetector: Failed to load model ({e}). Running in dummy mode.")
+        super().__init__(model_path, confidence_threshold)
+        self._load_yolo_model()
 
     def process(self, image: np.ndarray) -> List[CardDetection]:
         """

@@ -1,16 +1,7 @@
 import numpy as np
 from typing import List, Optional, TypedDict
-from vision.base_detector import BaseDetector
+from vision.base_detector import BaseDetector, BoundingBox
 
-class BoundingBox(TypedDict):
-    """
-    Coordinates representing a rectangular region in the image.
-    Values are normalised (0.0 to 1.0) relative to image dimensions.
-    """
-    x: float
-    y: float
-    width: float
-    height: float
 
 class HandDetection(TypedDict):
     """
@@ -35,23 +26,8 @@ class HandDetector(BaseDetector[List[HandDetection]]):
     """
 
     def __init__(self, model_path: Optional[str] = None):
-        """
-        Initialise the hand detector.
-        
-        Args:
-            model_path: Path to the local model weights. If None, runs in dummy mode.
-        """
-        self.model_path = model_path
-        self._load_model()
-
-    def _load_model(self):
-        """
-        Loads the neural network weights from the local filesystem.
-        """
-        if self.model_path:
-            print(f"HandDetector: Loading model from {self.model_path}...")
-        else:
-            print("HandDetector: Initialised in dummy mode.")
+        super().__init__(model_path)
+        self._load_yolo_model()
 
     def process(self, image: np.ndarray) -> List[HandDetection]:
         """
