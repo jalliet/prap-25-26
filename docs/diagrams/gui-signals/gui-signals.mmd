@@ -1,0 +1,62 @@
+flowchart LR
+    subgraph Sources["Signal Sources"]
+        direction TB
+        subgraph GS["GameState"]
+            S1["on_phase_change"]
+            S2["on_pot_change"]
+            S3["on_card_detection_required"]
+            S4["on_turn_change"]
+        end
+        subgraph VC["VisionController"]
+            V1["frame_ready"]
+            V2["cards_detected"]
+        end
+        subgraph ARB["ArmRosBridge"]
+            A1["connection_changed"]
+            A2["move_completed"]
+        end
+    end
+
+    subgraph Handlers["Signal Handlers"]
+        direction TB
+        subgraph MW["MainWindow"]
+            MW1["on_phase_change()"]
+            MW2["on_pot_change()"]
+            MW3["on_cards_updated()"]
+            MW4["on_turn_change()"]
+            MW5["update_frame()"]
+            MW6["_on_cards_detected()"]
+            MW7["_on_arm_connection_changed()"]
+            MW8["_on_arm_move_completed()"]
+        end
+        subgraph VC_H["VisionController"]
+            VC1["_handle_phase_change()"]
+            VC2["_handle_pot_change()"]
+            VC3["_handle_card_detection()"]
+        end
+    end
+
+    S1 --> MW1
+    S1 --> VC1
+    S2 --> MW2
+    S2 --> VC2
+    S3 --> MW3
+    S3 --> VC3
+    S4 --> MW4
+
+    V1 --> MW5
+    V2 --> MW6
+
+    A1 --> MW7
+    A2 --> MW8
+
+    classDef gs fill:#C75050,stroke:#8A2D2D,color:#fff
+    classDef vc fill:#50C878,stroke:#2D7A47,color:#fff
+    classDef arb fill:#9B59B6,stroke:#6C3483,color:#fff
+    classDef mw fill:#4A90E2,stroke:#2B5C8A,color:#fff
+
+    class S1,S2,S3,S4 gs
+    class V1,V2 vc
+    class A1,A2 arb
+    class MW1,MW2,MW3,MW4,MW5,MW6,MW7,MW8 mw
+    class VC1,VC2,VC3 vc

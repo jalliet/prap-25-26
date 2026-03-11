@@ -1,0 +1,36 @@
+stateDiagram-v2
+    [*] --> PRE_FLOP: start_new_hand()
+
+    PRE_FLOP --> FLOP: betting complete<br/>deal 3 community cards
+    FLOP --> TURN: betting complete<br/>deal 1 card
+    TURN --> RIVER: betting complete<br/>deal 1 card
+    RIVER --> SHOWDOWN: betting complete
+
+    PRE_FLOP --> SHOWDOWN: all fold<br/>(1 player remaining)
+    FLOP --> SHOWDOWN: all fold
+    TURN --> SHOWDOWN: all fold
+    RIVER --> SHOWDOWN: all fold
+
+    SHOWDOWN --> [*]: hand complete
+
+    state PRE_FLOP {
+        direction LR
+        [*] --> PostBlinds
+        PostBlinds --> BettingRound
+        BettingRound --> [*]: _is_round_complete()
+    }
+
+    note right of FLOP
+        deal_community_cards() emits
+        on_card_detection_required →
+        VisionController switches to
+        CARD_READING mode
+    end note
+
+    note right of SHOWDOWN
+        Signals emitted:
+        • on_phase_change(phase)
+        • on_pot_change(total)
+        • on_player_action(action)
+        • on_turn_change(player)
+    end note
