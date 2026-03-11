@@ -1,0 +1,71 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+    <ros2_control name="RobotSystem" type="system">
+        <hardware>
+            <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+            <param name="position_proportional_gain">1000.0</param>
+        </hardware>
+
+        <joint name="1">
+            <command_interface name="position">
+                <param name="min">-1.91986</param>
+                <param name="max">1.91986</param>
+            </command_interface>
+            <state_interface name="position" />
+            <state_interface name="velocity" />
+            <param name="position_proportional_gain">1000.0</param>
+        </joint>
+
+        <joint name="2">
+            <command_interface name="position">
+                <param name="min">-3.14159</param>
+                <param name="max">0.17453</param>
+            </command_interface>
+            <state_interface name="position" />
+            <state_interface name="velocity" />
+            <param name="position_proportional_gain">1000.0</param>
+        </joint>
+
+        <joint name="3">
+            <command_interface name="position">
+                <param name="min">-0.17453</param>
+                <param name="max">3.14159</param>
+            </command_interface>
+            <state_interface name="position" />
+            <state_interface name="velocity" />
+            <param name="position_proportional_gain">1000.0</param>
+        </joint>
+
+        <joint name="4">
+            <command_interface name="position">
+                <param name="min">-1.65806</param>
+                <param name="max">1.65806</param>
+            </command_interface>
+            <state_interface name="position" />
+            <state_interface name="velocity" />
+            <param name="position_proportional_gain">1000.0</param>
+        </joint>
+        
+        <joint name="5">
+            <command_interface name="position">
+                <param name="min">-2.79253</param>
+                <param name="max">2.79253</param>
+            </command_interface>
+            <state_interface name="position" />
+            <state_interface name="velocity" />
+            <param name="position_proportional_gain">1000.0</param>
+        </joint>
+
+        <joint name="6">
+            <command_interface name="position">
+                <param name="min">-0.174533</param>
+                <param name="max">1.74533</param>
+            </command_interface>
+            <state_interface name="position" />
+            <state_interface name="velocity" />
+            <param name="position_proportional_gain">1000.0</param>
+        </joint>
+    </ros2_control>
+
+</robot>
