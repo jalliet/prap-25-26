@@ -22,7 +22,10 @@ log/
 src/log/
 
 # Vision model weights directory
-vision/models
+vision/
 
 # Simulation artifacts
 debug_robot.urdf
+
+# Docs
+docs/diagrams/output/**/*.png
