@@ -75,11 +75,13 @@ vision/models/Chip_segmentation_large_best.pt
 If weights are missing, detectors run in dummy mode (no inference, no errors).
 
 ### Arm Controller (ROS 2)
-ROS 2 stack for the SO101 robot arm on the `feature/arm_controller` branch:
-- LQR trajectory controller with CasADi inverse kinematics
-- C++ servo driver for STS3215 servos
-- Gazebo simulation with digital twin mode
-- See `docs/PLAN_ARM_ROS_BRIDGE.md` for integration plan
+ROS 2 workspace in `src/` for the SO-101 robot arm:
+- **poker_bringup** — master launch file with 4 modes (sim, pc_hardware, pi_hardware, pi_hardware_headless)
+- **poker_control** — LQR trajectory controller with CasADi inverse kinematics, action servers
+- **poker_interfaces** — custom ROS 2 messages (TargetPose, TargetJoints, MotorFeedback) and actions (MovePose, MoveJoints)
+- **lerobot_description** — SO-101 URDF/xacro, STL meshes, Gazebo launch
+- **scservo_driver** — C++ driver for STS3215 servos
+- **poker_dashboard** — ROS 2 dashboard node (alternative to PySide6 GUI)
 
 ### Arm Bridge
 `services/arm_ros_bridge.py` — Qt-compatible bridge connecting the main app to the ROS 2 arm controller. Gracefully degrades when ROS 2 is not installed.
@@ -101,19 +103,29 @@ bash scripts/start_game.sh
 - **Start Hand / Test Bet** — manual triggers for testing game state transitions.
 
 ### With ROS 2 Simulation
-Requires a built ROS 2 workspace with the `poker_bringup` package.
+Requires ROS 2 Jazzy and a built workspace.
 
 ```bash
-# Build the ROS 2 workspace (once)
+# Source ROS 2 and build the workspace (once)
+source /opt/ros/jazzy/setup.bash
 colcon build
+source install/setup.bash
 
 # Option 1: Launch simulation from the GUI
 python main.py
 # Then click "Start Simulation" in the dashboard
 
 # Option 2: Launch simulation manually
-source install/setup.bash
 ros2 launch poker_bringup poker_arm.launch.py mode:=sim
+```
+
+### ROS 2 Launch Modes
+```bash
+ros2 launch poker_bringup poker_arm.launch.py mode:=sim                # Gazebo simulation only
+ros2 launch poker_bringup poker_arm.launch.py mode:=pc_hardware        # PC + real servos + digital twin
+ros2 launch poker_bringup poker_arm.launch.py mode:=pi_hardware        # Raspberry Pi + real servos + digital twin
+ros2 launch poker_bringup poker_arm.launch.py mode:=pi_hardware_headless  # Pi headless (no Gazebo, no dashboard)
+ros2 launch poker_bringup poker_arm.launch.py dashboard_only:=true     # Dashboard only (remote control)
 ```
 
 ### With Mock Arm Server (no ROS 2 needed)
@@ -129,6 +141,29 @@ python main.py
 ```bash
 python -m pytest tests/ -v
 ```
+
+## Architecture Diagrams
+
+Mermaid diagrams in `docs/diagrams/`, one per subfolder:
+
+| Diagram | Description |
+|---------|-------------|
+| system-architecture | High-level component map (GUI, services, vision, poker, ROS 2) |
+| vision-pipeline | Camera → detectors → dedup → signals → display |
+| game-state-fsm | Poker phase transitions (Pre-Flop → Showdown) |
+| ros2-node-graph | ROS 2 nodes, topics, and action servers |
+| gui-signals | Qt/custom signal connections between components |
+| launch-modes | Which nodes spawn per ROS 2 launch mode |
+| class-relationships | Class diagram with inheritance and composition |
+
+Render all diagrams:
+```bash
+bash docs/diagrams/render.sh       # all diagrams
+bash docs/diagrams/render.sh -a    # app diagrams only
+bash docs/diagrams/render.sh -r    # ROS 2 diagrams only
+```
+
+Requires `npx` (Node.js). Output goes to `docs/diagrams/output/`.
 
 ## Chip Denominations
 
