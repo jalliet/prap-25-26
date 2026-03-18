@@ -60,10 +60,6 @@ classDiagram
         +process(image) ChipSegmentationResult
     }
 
-    class HandDetector {
-        +process(image) List
-    }
-
     class BirdseyeService {
         +config: BirdseyeConfig
         +start()
@@ -99,10 +95,8 @@ classDiagram
     VisionController --> BirdseyeService
     VisionController --> CardDetector
     VisionController --> ChipSegmentor
-    VisionController --> HandDetector
     BaseDetector <|-- CardDetector
     BaseDetector <|-- ChipSegmentor
-    BaseDetector <|-- HandDetector
     GameState --> Player
     GameState --> Card
     GameState --> ChipStack

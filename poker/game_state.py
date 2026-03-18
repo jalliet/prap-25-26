@@ -46,7 +46,6 @@ class GameState:
         self.players_acted_in_round: int = 0 # Count of players who acted this round
 
         # Vision flags
-        self.hand_detection_active: bool = False
         self.card_detection_active: bool = False
 
         # Signals

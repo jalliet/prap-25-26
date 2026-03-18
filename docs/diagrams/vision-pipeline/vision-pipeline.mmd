@@ -5,7 +5,6 @@ flowchart LR
 
     CD["CardDetector<br/>YOLOv8"]
     CHI["ChipSegmentor<br/>YOLOv8 Seg"]
-    HD["HandDetector<br/>(stub)"]
     PASS["Pass-through"]
 
     DEDUP["Dedup<br/>frozenset(rank,suit)"]
@@ -22,7 +21,6 @@ flowchart LR
 
     VC -->|"CARD_READING"| CD
     VC -->|"CHIP_SEG"| CHI
-    VC -->|"HAND_MON"| HD
     VC -->|"IDLE"| PASS
 
     CD -->|"List&lt;CardDetection&gt;"| DEDUP
@@ -32,7 +30,6 @@ flowchart LR
     DEDUP -->|"changed?"| SIG_C
 
     CHI -->|"ChipStack"| SIG_F
-    HD --> SIG_F
     PASS --> SIG_F
 
     SIG_F -->|"convert_cv_qt()"| FEED
@@ -44,6 +41,6 @@ flowchart LR
     classDef ui fill:#C75050,stroke:#8A2D2D,color:#fff
 
     class OAK,CS camera
-    class CD,CHI,HD,PASS detect
+    class CD,CHI,PASS detect
     class SIG_F,SIG_C,DEDUP,DRAW signal
     class MW,FEED,LOG ui

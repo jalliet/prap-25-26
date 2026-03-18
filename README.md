@@ -65,7 +65,6 @@ Core game logic in `poker/` — card/deck management, chip stacks, player state,
 Computer vision detectors in `vision/` using YOLOv8 models:
 - **Card Detector** — identifies playing cards using `vision/models/Card_detection_large_best.pt`. Live detection can be toggled from the dashboard via the "Toggle Card Detection" button, which overlays bounding boxes and labels on the camera feed.
 - **Chip Segmentor** — counts chips by colour using `vision/models/Chip_segmentation_large_best.pt`
-- **Hand Detector** — player hand tracking (stub, model TBD)
 
 Model weights are gitignored. Place them in `vision/models/`:
 ```

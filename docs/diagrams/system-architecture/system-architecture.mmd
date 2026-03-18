@@ -12,7 +12,6 @@ graph TB
     subgraph Vision["Vision System (YOLOv8)"]
         CD["CardDetector"]
         CHI["ChipSegmentor"]
-        HD["HandDetector<br/>(stub)"]
     end
 
     subgraph Poker["Poker Engine"]
@@ -34,7 +33,6 @@ graph TB
     VC --> CS
     VC --> CD
     VC --> CHI
-    VC --> HD
     VC <-.->|"auto mode<br/>switching"| GS
     VC -.->|"request_arm_move()"| ARB
 
@@ -53,6 +51,6 @@ graph TB
 
     class MW gui
     class VC,CS,ARB svc
-    class CD,CHI,HD vis
+    class CD,CHI vis
     class GS,PM poker
     class CTRL,SB,DRV,GAZ ros

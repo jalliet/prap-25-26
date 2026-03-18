@@ -1,27 +1,24 @@
-import cv2
 from typing import Optional
 from services.birdseye_service import BirdseyeService, BirdseyeConfig
 from enum import Enum, auto
 from poker.game_state import GameState, GamePhase
 from vision.card_detector import CardDetector
 from vision.chip_segmentor import ChipSegmentor
-from vision.hand_detector import HandDetector
 
-from PySide6.QtCore import QObject, Signal, QThread
+from PySide6.QtCore import QObject, Signal
 from vision.draw_utils import draw_card_detections
 import numpy as np
 
 class VisionMode(Enum):
     """
-    Operational modes for the Vision Controller.
+    Operational mode for the primary (OAK-D Lite) camera.
 
-    Each mode dictates the active detectors and the camera configuration required
-    to perform the specific computer vision task.
+    Chip segmentation runs independently on the secondary camera and is
+    not represented here.
     """
-    HAND_MONITORING = auto()  # Continuous video stream to track player hands and gestures.
-    CARD_READING = auto()     # High-resolution capture to identify card ranks and suits.
-    CHIP_SEGMENTATION = auto() # Side-view analysis for chip stack estimation (Future).
-    IDLE = auto()             # Camera active but no heavy processing.
+    CARD_READING = auto()     # OAK-D streams + CardDetector inference.
+    CHIP_SEGMENTATION = auto() # Legacy — will be removed when chip camera is integrated.
+    IDLE = auto()             # OAK-D streams, no inference.
 
 class VisionController(QObject):
     """
@@ -67,7 +64,6 @@ class VisionController(QObject):
             model_path='vision/models/Card_detection_large_best.pt')
         self.chip_segmentor = ChipSegmentor(
             model_path='vision/models/Chip_segmentation_large_best.pt')
-        self.hand_detector = HandDetector()  # No model file, stays in dummy mode
 
         # Internal polling timer
         from PySide6.QtCore import QTimer
@@ -125,9 +121,7 @@ class VisionController(QObject):
         Handles game phase changes to adjust vision monitoring strategy.
         """
         print(f"VisionController: Phase changed to {phase.name}")
-        if phase in [GamePhase.PRE_FLOP, GamePhase.FLOP, GamePhase.TURN, GamePhase.RIVER]:
-             self.set_mode(VisionMode.HAND_MONITORING)
-        elif phase == GamePhase.SHOWDOWN:
+        if phase == GamePhase.SHOWDOWN:
              pass
 
     def _handle_card_detection(self, cards):
@@ -176,8 +170,6 @@ class VisionController(QObject):
 
             if self.mode == VisionMode.CARD_READING:
                  print("VisionController: Configuring for Card Reading (High-Res/Still)")
-            elif self.mode == VisionMode.HAND_MONITORING:
-                 print("VisionController: Configuring for Hand Monitoring (Video Stream)")
             elif self.mode == VisionMode.CHIP_SEGMENTATION:
                  print("VisionController: Configuring for Chip Segmentation (Side View)")
 
@@ -199,11 +191,7 @@ class VisionController(QObject):
         if frame is None:
             return
 
-        if self.mode == VisionMode.HAND_MONITORING:
-            detections = self.hand_detector.process(frame)
-            # Future: gesture recognition → arm commands
-
-        elif self.mode == VisionMode.CARD_READING:
+        if self.mode == VisionMode.CARD_READING:
             detections = self.card_detector.process(frame)
             draw_card_detections(frame, detections)
             # Only emit signal when the set of detected cards changes

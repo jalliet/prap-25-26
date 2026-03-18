@@ -420,7 +420,6 @@ class MainWindow(QMainWindow):
             # Highlight player in list (optional)
 
     _MODE_COLOURS = {
-        VisionMode.HAND_MONITORING: "#00FF00",   # Green
         VisionMode.CARD_READING: "#00FFFF",      # Cyan
         VisionMode.CHIP_SEGMENTATION: "#FFA500", # Orange
     }
