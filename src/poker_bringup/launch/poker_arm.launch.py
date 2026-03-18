@@ -23,7 +23,7 @@ def generate_launch_description():
         'dashboard_only',
         default_value='false',
         description='Set to true to launch only the dashboard (for remote control)'
-    )
+    )-
     
     mode = LaunchConfiguration('mode')
     port = LaunchConfiguration('port')

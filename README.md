@@ -175,6 +175,34 @@ Bring up the full robot stack (description, controller, and dashboard).
 ros2 launch poker_bringup poker_arm.launch.py mode:=sim
 
 ```
+> **Note:** If you encounter the following error while using WSL:
+>
+> ```bash
+> [dashboard-5]   File "<PATH_TO_SRC>/src/build/poker_dashboard/poker_dashboard/dashboard_node.py", line 5, in <module>
+> [dashboard-5]     from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
+> [dashboard-5]     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> [dashboard-5] ModuleNotFoundError: No module named 'PySide6'
+> ```
+>
+> This usually means the node is being run with the system Python instead of your virtual environment.
+>
+> As a quick fix, update the shebang line in:
+>
+> ```
+> <PATH_TO_SRC>/src/install/poker_dashboard/lib/poker_dashboard/dashboard
+> ```
+>
+> Change:
+>
+> ```bash
+> #!/usr/bin/python3
+> ```
+>
+> to:
+>
+> ```bash
+> #!<VENV_PATH>/bin/python3
+> ```
 
 ### Step 4: Visual Tuning (Optional)
 
