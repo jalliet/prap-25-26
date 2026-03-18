@@ -17,8 +17,9 @@ class SimBridge(Node):
         
         # --- Config ---
         self.n_joints = 6
-        self.joint_names = ['1', '2', '3', '4', '5', '6'] 
-        self.SERVO_ZERO = [2048] * self.n_joints
+        self.joint_names = ['1', '2', '3', '4', '5', '6']
+        # [2048] * self.n_joints
+        self.SERVO_ZERO = [2048, 2048, 479, 1873, 2048, 2048]
         self.SERVO_SIGNS = [1] * self.n_joints
         self.STEPS_PER_RAD = 4096.0 / (2.0 * np.pi)
 
