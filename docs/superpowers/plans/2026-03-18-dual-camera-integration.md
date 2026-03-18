@@ -38,7 +38,7 @@
 
 ---
 
-## Task 1: Create ChipSegService
+## ✅ Task 1: Create ChipSegService
 
 **Files:**
 - Create: `services/chip_seg_service.py`
