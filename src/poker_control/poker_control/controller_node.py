@@ -21,7 +21,7 @@ class PokerController(Node):
         
         # --- Robot Configuration ---
         self.n_joints = 6
-        self.SERVO_ZERO = 
+        self.SERVO_ZERO = [2048, 2048, 479, 1873, 2048, 2048]
                                                                                      
 
         self.STEPS_PER_RAD = 4096.0 / (2.0 * np.pi)
