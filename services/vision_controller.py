@@ -1,6 +1,6 @@
 import cv2
 from typing import Optional
-from services.camera_service import CameraService, CameraConfig
+from services.birdseye_service import BirdseyeService, BirdseyeConfig
 from enum import Enum, auto
 from poker.game_state import GameState, GamePhase
 from vision.card_detector import CardDetector
@@ -50,8 +50,8 @@ class VisionController(QObject):
         # Initialise QObject
         super().__init__()
 
-        # Initialise Camera Service with default configuration
-        self.camera_service = CameraService(CameraConfig())
+        # Initialise Birdseye Camera Service with default configuration
+        self.camera_service = BirdseyeService(BirdseyeConfig())
         self.mode = VisionMode.IDLE
         self.is_running = False
         self._initialized = True
@@ -93,7 +93,7 @@ class VisionController(QObject):
         # Update internal polling timer
         self._poll_timer.setInterval(1000 // fps)
 
-        # Propagate to CameraService if it supports dynamic reconfiguration
+        # Propagate to BirdseyeService if it supports dynamic reconfiguration
         try:
             self.camera_service.set_fps(fps)
         except Exception as e:

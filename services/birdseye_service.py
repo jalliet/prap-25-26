@@ -2,17 +2,17 @@ import depthai as dai
 import cv2
 import numpy as np
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Tuple, Optional
 
 @dataclass
-class CameraConfig:
+class BirdseyeConfig:
     """
-    Configuration artifact for the Camera Service.
-    
-    This data structure defines the hardware parameters for the OAK-D camera,
+    Configuration artifact for the Birdseye Camera Service.
+
+    This data structure defines the hardware parameters for the OAK-D Lite camera,
     serving as the explicit interface for camera initialisation.
-    
+
     Attributes:
         resolution: The sensor resolution (e.g., THE_1080_P).
         preview_size: Tuple (width, height) for the preview stream.
@@ -25,39 +25,41 @@ class CameraConfig:
     stream_name: str = "preview"
 
 
-class CameraService:
+class BirdseyeService:
     """
-    Manages the interface with the OAK-D camera hardware.
-    
-    This service handles the lifecycle of the DepthAI pipeline, establishing
-    the connection to the device and managing the data queues for frame retrieval.
+    Manages the interface with the OAK-D Lite camera hardware.
+
+    The OAK-D Lite is mounted overhead (birdseye view) above the poker table
+    for card detection. This service handles the lifecycle of the DepthAI pipeline,
+    connecting and managing the data queues for
+    frame retrieval.
     """
-    
-    def __init__(self, config: CameraConfig = None):
+
+    def __init__(self, config: Optional[BirdseyeConfig] = None):
         """
-        Initialise the Camera Service.
-        
+        Initialise the Birdseye Camera Service.
+
         Args:
             config: Configuration object defining hardware parameters.
                     If None, default configuration is used.
         """
-        self.config = config if config else CameraConfig()
+        self.config = config if config is not None else BirdseyeConfig()
         self.running = False
         self.device: Optional[dai.Device] = None
         self.queue: Optional[dai.DataOutputQueue] = None
         self.control_queue: Optional[dai.DataInputQueue] = None
-        
+
     def _create_pipeline(self) -> dai.Pipeline:
         """
         Constructs the DepthAI processing pipeline.
-        
+
         The pipeline consists of nodes linked together to define the flow of data
         on the OAK-D device.
-        
+
         Nodes:
             ColorCamera: Captures RGB frames from the central sensor.
             XLinkOut: Transmits the captured frames from the device to the host via USB.
-            
+
         Returns:
             A fully configured dai.Pipeline object.
         """
@@ -87,7 +89,7 @@ class CameraService:
         # Link the Camera's preview output to the XLink input
         # Flow: Sensor -> ColorCamera Node -> Preview Output -> XLinkOut Node -> USB -> Host
         cam_rgb.preview.link(xout_rgb.input)
-        
+
         return pipeline
 
     def start(self):
@@ -98,17 +100,17 @@ class CameraService:
             return
 
         pipeline = self._create_pipeline()
-        
+
         # Connect to device, start pipeline
         try:
             self.device = dai.Device(pipeline)
-            
+
             # Get the output queue for the specific stream
             # maxSize=4: Buffer size to prevent dropped frames if host is slow
             # blocking=False: Do not block the device if the queue is full (overwrite old frames)
             self.queue = self.device.getOutputQueue(
-                name=self.config.stream_name, 
-                maxSize=4, 
+                name=self.config.stream_name,
+                maxSize=4,
                 blocking=False
             )
             # Expose input queue for control messages
@@ -117,11 +119,11 @@ class CameraService:
             except Exception:
                 # If device doesn't expose input queue, keep control_queue as None
                 self.control_queue = None
-            
+
             self.running = True
-            print("Camera Service started successfully.")
+            print("BirdseyeService started successfully.")
         except Exception as e:
-            print(f"Failed to start Camera Service: {e}")
+            print(f"Failed to start BirdseyeService: {e}")
             self.stop()
 
     def stop(self):
@@ -133,12 +135,12 @@ class CameraService:
             self.device.close()
             self.device = None
         self.queue = None
-        print("Camera Service stopped.")
+        print("BirdseyeService stopped.")
 
     def get_frame(self) -> Optional[np.ndarray]:
         """
         Retrieves the latest available frame from the device queue.
-        
+
         Returns:
             A numpy array representing the image (BGR format), or None if no frame is available.
         """
@@ -148,13 +150,13 @@ class CameraService:
         try:
             # tryGet() retrieves the latest message from the queue without blocking
             in_rgb = self.queue.tryGet()
-            
+
             if in_rgb is not None:
                 # Convert the DepthAI ImgFrame to an OpenCV-compatible numpy array
                 return in_rgb.getCvFrame()
         except Exception as e:
             print(f"Error retrieving frame: {e}")
-        
+
         return None
 
     def set_fps(self, fps: int):
@@ -184,24 +186,24 @@ class CameraService:
             print(f"Failed to set fps on device: {e}")
 
 if __name__ == "__main__":
-    service = CameraService()
+    service = BirdseyeService()
     service.start()
-    
+
     print("Press 'q' to quit.")
-    
+
     try:
         while True:
             frame = service.get_frame()
             if frame is not None:
-                cv2.imshow("Camera Preview", frame)
-            
+                cv2.imshow("Birdseye Preview", frame)
+
             if cv2.waitKey(1) == ord('q'):
                 break
-            
+
             # Sleep prevents busy loop if no frame is available immediately
             if frame is None:
                 time.sleep(0.01)
-                
+
     except KeyboardInterrupt:
         pass
     finally:

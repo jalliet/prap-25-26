@@ -11,7 +11,7 @@ classDiagram
 
     class VisionController {
         &lt;&lt;Singleton&gt;&gt;
-        +camera_service: CameraService
+        +camera_service: BirdseyeService
         +card_detector: CardDetector
         +chip_segmentor: ChipSegmentor
         +mode: VisionMode
@@ -64,8 +64,8 @@ classDiagram
         +process(image) List
     }
 
-    class CameraService {
-        +config: CameraConfig
+    class BirdseyeService {
+        +config: BirdseyeConfig
         +start()
         +stop()
         +get_frame() ndarray
@@ -96,7 +96,7 @@ classDiagram
     MainWindow --> VisionController
     MainWindow --> ArmRosBridge
     MainWindow --> GameState
-    VisionController --> CameraService
+    VisionController --> BirdseyeService
     VisionController --> CardDetector
     VisionController --> ChipSegmentor
     VisionController --> HandDetector
