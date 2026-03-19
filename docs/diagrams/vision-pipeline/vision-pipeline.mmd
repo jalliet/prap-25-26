@@ -1,46 +1,62 @@
 flowchart LR
-    OAK["OAK-D Camera<br/>1080p Sensor"]
-    CS["CameraService<br/>DepthAI Pipeline<br/>1280×720 preview"]
-    VC["VisionController<br/>QTimer @ FPS Hz"]
+    OAK["OAK-D Lite<br/>1080p Sensor"]
+    BS["BirdseyeService<br/>DepthAI Pipeline<br/>1280×720 preview"]
+    C925e["Logitech C925e<br/>1080p USB Webcam"]
+    CSS["ChipSegService<br/>cv2.VideoCapture"]
+
+    VC["VisionController<br/>_poll_timer @ FPS Hz"]
+    CHIP_TIMER["VisionController<br/>_chip_poll_timer (always-on)"]
 
     CD["CardDetector<br/>YOLOv8"]
     CHI["ChipSegmentor<br/>YOLOv8 Seg"]
     PASS["Pass-through"]
 
-    DEDUP["Dedup<br/>frozenset(rank,suit)"]
+    DEDUP_C["Dedup<br/>frozenset(rank,suit)"]
+    DEDUP_CHIP["Dedup<br/>stack.total != last"]
     DRAW["draw_card_detections()<br/>bbox + label overlay"]
 
     SIG_F["frame_ready signal"]
     SIG_C["cards_detected signal"]
+    SIG_CF["chip_frame_ready signal"]
+    SIG_CH["chips_detected signal"]
 
-    FEED["MainWindow<br/>Camera Feed QLabel"]
+    FEED["MainWindow<br/>OAK-D Feed QLabel"]
     LOG["MainWindow<br/>Game Log"]
+    CHIP_FEED["MainWindow<br/>Chip Feed QLabel"]
+    CHIP_LBL["MainWindow<br/>Chip Stack Label"]
 
-    OAK --> CS
-    CS -->|"get_frame()"| VC
+    OAK --> BS
+    BS -->|"get_frame()"| VC
 
     VC -->|"CARD_READING"| CD
-    VC -->|"CHIP_SEG"| CHI
     VC -->|"IDLE"| PASS
 
-    CD -->|"List&lt;CardDetection&gt;"| DEDUP
+    CD -->|"List<CardDetection>"| DEDUP_C
     CD -->|"detections"| DRAW
     DRAW -->|"annotated frame"| SIG_F
 
-    DEDUP -->|"changed?"| SIG_C
+    DEDUP_C -->|"changed?"| SIG_C
 
-    CHI -->|"ChipStack"| SIG_F
     PASS --> SIG_F
+
+    C925e --> CSS
+    CSS -->|"get_frame()"| CHIP_TIMER
+    CHIP_TIMER --> CHI
+    CHI -->|"ChipSegmentationResult"| DEDUP_CHIP
+    CHI -->|"raw frame"| SIG_CF
+    DEDUP_CHIP -->|"total changed?"| SIG_CH
 
     SIG_F -->|"convert_cv_qt()"| FEED
     SIG_C --> LOG
+    SIG_CF -->|"convert_cv_qt()"| CHIP_FEED
+    SIG_CH --> CHIP_LBL
 
     classDef camera fill:#4A90E2,stroke:#2B5C8A,color:#fff
     classDef detect fill:#E8A838,stroke:#A06B1F,color:#fff
     classDef signal fill:#50C878,stroke:#2D7A47,color:#fff
     classDef ui fill:#C75050,stroke:#8A2D2D,color:#fff
 
-    class OAK,CS camera
+    class OAK,BS,C925e,CSS camera
     class CD,CHI,PASS detect
-    class SIG_F,SIG_C,DEDUP,DRAW signal
-    class MW,FEED,LOG ui
+    class SIG_F,SIG_C,SIG_CF,SIG_CH,DEDUP_C,DEDUP_CHIP,DRAW signal
+    class FEED,LOG,CHIP_FEED,CHIP_LBL ui

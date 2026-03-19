@@ -453,7 +453,7 @@ git commit -m "feat: remove HandDetector and HAND_MONITORING mode"
 
 ---
 
-## Task 3: Integrate C925e into VisionController as Independent Chip Camera
+## ✅ Task 3: Integrate C925e into VisionController as Independent Chip Camera
 
 **Files:**
 - Modify: `services/vision_controller.py`
@@ -799,7 +799,7 @@ git commit -m "feat: integrate C925e chip camera as independent background pipel
 
 ---
 
-## Task 4: Update GUI for Dual-Camera
+## ✅ Task 4: Update GUI for Dual-Camera
 
 **Files:**
 - Modify: `gui/main_window.py`
@@ -935,7 +935,7 @@ git commit -m "feat: add chip camera feed and chip stack display to GUI"
 
 ---
 
-## Task 5: Update Diagrams and Docs
+## ✅ Task 5: Update Diagrams and Docs
 
 **Files:**
 - Modify: `docs/diagrams/vision-pipeline/vision-pipeline.mmd`

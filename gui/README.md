@@ -14,7 +14,11 @@ python main.py
 1200x800 window with a 30/70 QSplitter:
 
 - **Left Panel**: Game phase, 5 community card SVG slots, pot display, player list, game log, control buttons
-- **Right Panel**: Live camera feed (QLabel), FPS spinbox (1-60), vision mode indicator
+- **Right Panel**:
+  - FPS spinbox (1-60) + vision mode indicator
+  - Primary OAK-D Lite feed (QLabel, expands to fill available height) — birdseye card detection
+  - Chip Camera (C925e) header + compact 180px feed (QLabel) — always-on chip segmentation
+  - Chip stack result label (updates when total chip value changes)
 
 ## Controls
 

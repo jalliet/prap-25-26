@@ -37,7 +37,7 @@ Creates QApplication → MainWindow. MainWindow bootstraps GameState, VisionCont
 ### GUI (`gui/`)
 - `main_window.py` — MainWindow (1200x800, QSplitter 30/70)
   - Left: game phase, 5 community card SVG slots, pot display, player list, game log, control buttons
-  - Right: camera feed QLabel, FPS spinbox, vision mode indicator
+  - Right: FPS spinbox, vision mode indicator, OAK-D primary feed QLabel (expands), C925e chip feed QLabel (fixed 180px), chip stack result label
   - Buttons: Start Hand, Test Bet, Toggle Card Detection, Start/Stop Simulation
   - Simulation: subprocess `ros2 launch` with SIGINT/SIGTERM cleanup via process groups
 - `utils.py` — `convert_cv_qt()` BGR ndarray → QPixmap

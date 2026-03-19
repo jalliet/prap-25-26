@@ -10,7 +10,7 @@ In player mode, the robot arm will be able to pick up cards, play them, and hand
 *   **Python 3.12** (Required)
     *   We recommend using [pyenv](https://github.com/pyenv/pyenv) to manage python versions.
 *   **Hardware**: Raspberry Pi 5 (8GB RAM) running Raspberry Pi OS (Bookworm).
-*   **Camera**: OAK-D Lite Camera (optional, for live feed).
+*   **Cameras**: OAK-D Lite (birdseye card detection) + Logitech C925e (chip segmentation)
 *   **Robot Arm**: SO101 6-DOF servo arm (optional, for arm control).
 
 ### Installation
@@ -62,9 +62,9 @@ The PySide6 graphical interface for monitoring the game state and camera feed. S
 Core game logic in `poker/` — card/deck management, chip stacks, player state, betting actions, and game phase transitions (Pre-Flop → Showdown).
 
 ### Vision System
-Computer vision detectors in `vision/` using YOLOv8 models:
-- **Card Detector** — identifies playing cards using `vision/models/Card_detection_large_best.pt`. Live detection can be toggled from the dashboard via the "Toggle Card Detection" button, which overlays bounding boxes and labels on the camera feed.
-- **Chip Segmentor** — counts chips by colour using `vision/models/Chip_segmentation_large_best.pt`
+Dual-camera computer vision pipeline using YOLOv8 models:
+- **Card Detector** (`OAK-D Lite`) — identifies playing cards using `vision/models/Card_detection_large_best.pt`. Detection can be toggled via "Toggle Card Detection" in the dashboard, which overlays bounding boxes and labels on the primary feed.
+- **Chip Segmentor** (`Logitech C925e`) — counts chips by colour using `vision/models/Chip_segmentation_large_best.pt`. Runs as an always-on background pipeline on the dedicated secondary camera; the chip stack total is shown in the right panel.
 
 Model weights are gitignored. Place them in `vision/models/`:
 ```
@@ -97,7 +97,7 @@ bash scripts/start_game.sh
 ```
 
 ### Dashboard Features
-- **Toggle Card Detection** — enables live YOLOv8 card detection with bounding box overlays on the camera feed. Detections are logged in the game log.
+- **Toggle Card Detection** — enables live YOLOv8 card detection with bounding box overlays on the primary OAK-D feed. Detections are logged in the game log. Two camera feeds are visible in the right panel: the primary OAK-D birdseye feed (top) and the compact C925e chip feed (bottom).
 - **Start/Stop Simulation** — launches or stops the ROS 2 Gazebo simulation (`ros2 launch poker_bringup poker_arm.launch.py mode:=sim`) directly from the GUI.
 - **Start Hand / Test Bet** — manual triggers for testing game state transitions.
 
