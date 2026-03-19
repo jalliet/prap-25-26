@@ -229,7 +229,7 @@ class MainWindow(QMainWindow):
         fps_layout.addWidget(self.mode_label)
         right_layout.addWidget(fps_container)
 
-        # Feed Container
+        # Feed Container — OAK-D Lite primary feed (expands to fill available space)
         self.camera_feed = QLabel("Camera Feed Placeholder")
         self.camera_feed.setObjectName("cameraFeed")
         self.camera_feed.setAlignment(Qt.AlignCenter)
@@ -237,6 +237,25 @@ class MainWindow(QMainWindow):
         self.camera_feed.setScaledContents(True)
         self.camera_feed.setStyleSheet("background-color: #111; border: 1px solid #333;")
         right_layout.addWidget(self.camera_feed, 1)
+
+        # Chip camera section — C925e secondary feed (fixed 180px height)
+        chip_header = QLabel("Chip Camera (C925e)")
+        chip_header.setObjectName("cameraHeaderLabel")
+        chip_header.setAlignment(Qt.AlignCenter)
+        right_layout.addWidget(chip_header)
+
+        self.chip_feed = QLabel("Chip Feed")
+        self.chip_feed.setObjectName("cameraFeed")
+        self.chip_feed.setAlignment(Qt.AlignCenter)
+        self.chip_feed.setFixedHeight(180)
+        self.chip_feed.setScaledContents(True)
+        self.chip_feed.setStyleSheet("background-color: #111; border: 1px solid #333;")
+        right_layout.addWidget(self.chip_feed)
+
+        self.chip_result_label = QLabel("Chip stack: —")
+        self.chip_result_label.setObjectName("infoLabel")
+        self.chip_result_label.setAlignment(Qt.AlignCenter)
+        right_layout.addWidget(self.chip_result_label)
 
         # Add panels to splitter with initial ratio (30% left, 70% right)
         self.splitter.addWidget(left_panel)
@@ -259,6 +278,8 @@ class MainWindow(QMainWindow):
         # Connect Vision Controller Signals
         self.vision_controller.frame_ready.connect(self.update_frame)
         self.vision_controller.cards_detected.connect(self._on_cards_detected)
+        self.vision_controller.chip_frame_ready.connect(self._update_chip_feed)
+        self.vision_controller.chips_detected.connect(self._on_chips_detected)
 
         # Start Service
         self.vision_controller.start()
@@ -420,8 +441,8 @@ class MainWindow(QMainWindow):
             # Highlight player in list (optional)
 
     _MODE_COLOURS = {
-        VisionMode.CARD_READING: "#00FFFF",      # Cyan
-        VisionMode.CHIP_SEGMENTATION: "#FFA500", # Orange
+        VisionMode.CARD_READING: "#00FFFF",  # Cyan
+        # IDLE falls back to the default yellow in update_mode_label
     }
 
     def update_mode_label(self):
@@ -435,13 +456,22 @@ class MainWindow(QMainWindow):
         self.log_area.append(message)
 
     def update_frame(self, frame: np.ndarray):
-        """
-        Updates the camera feed with the latest frame from the VisionController.
-        Triggered by the frame_ready signal.
-        """
+        """Updates the primary (OAK-D) camera feed. Triggered by frame_ready."""
         if frame is not None:
             qt_img = convert_cv_qt(frame)
             self.camera_feed.setPixmap(qt_img)
+
+    def _update_chip_feed(self, frame: np.ndarray):
+        """Updates the chip camera feed. Triggered by chip_frame_ready."""
+        if frame is not None:
+            qt_img = convert_cv_qt(frame)
+            self.chip_feed.setPixmap(qt_img)
+
+    def _on_chips_detected(self, result: dict):
+        """Updates the chip stack label. Triggered by chips_detected on total change."""
+        stack = result.get("stack")
+        if stack is not None:
+            self.chip_result_label.setText(f"Chip stack: {stack.total}")
 
     def _on_arm_connection_changed(self, available: bool):
         status = "Connected" if available else "Disconnected"
