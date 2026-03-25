@@ -37,7 +37,7 @@ Creates QApplication → MainWindow. MainWindow bootstraps GameState, VisionCont
 ### GUI (`gui/`)
 - `main_window.py` — MainWindow (1200x800, QSplitter 30/70)
   - Left: game phase, 5 community card SVG slots, pot display, player list, game log, control buttons
-  - Right: FPS spinbox, vision mode indicator, OAK-D primary feed QLabel (expands), C925e chip feed QLabel (fixed 180px), chip stack result label
+  - Right: Camera FPS spinbox (controls both cameras), vision mode indicator, OAK-D primary feed QLabel (expands), C925e chip feed QLabel (fixed 180px), chip stack result label
   - Buttons: Start Hand, Test Bet, Toggle Card Detection, Start/Stop Simulation
   - Simulation: subprocess `ros2 launch` with SIGINT/SIGTERM cleanup via process groups
 - `utils.py` — `convert_cv_qt()` BGR ndarray → QPixmap
@@ -45,14 +45,16 @@ Creates QApplication → MainWindow. MainWindow bootstraps GameState, VisionCont
 
 ### Services (`services/`)
 - `vision_controller.py` — VisionController (Singleton, QObject)
-  - Modes: IDLE, CARD_READING (chip segmentation runs as always-on background, not a mode)
+  - Modes: IDLE, CARD_READING (chip segmentation is event-driven, not a mode)
   - Two independent QTimers: `_poll_timer` (OAK-D card detection), `_chip_poll_timer` (C925e chip segmentation)
+  - Chip inference is gated by `_chip_inference_active` flag — only runs YOLO after betting actions (CALL/BET/RAISE/ALL_IN) or during SHOWDOWN; timer always streams frames for live preview
   - Deduplication: only emits `cards_detected` when detected set changes (frozenset); only emits `chips_detected` when total changes
   - Signals: `frame_ready(ndarray)`, `cards_detected(list)`, `chip_frame_ready(ndarray)`, `chips_detected(dict)`
-  - Auto mode switching: connects to GameState phase/card signals
+  - Auto mode switching: connects to GameState phase/card/action signals
+  - Unified `set_fps(fps)` controls both camera timers and hardware FPS
 - `birdseye_service.py` — BirdseyeService (OAK-D Lite, overhead/birdseye view, DepthAI)
   - Pipeline: ColorCamera 1080p → preview 1280x720 → XLinkOut
-  - Dynamic FPS via CameraControl messages
+  - Hardware FPS is fixed at pipeline creation (`cam_rgb.setFps()`); `set_fps()` updates config only
   - Graceful fallback: returns None if device unavailable
 - `chip_seg_service.py` — ChipSegService (Logitech C925e, chip segmentation view, OpenCV VideoCapture)
   - `ChipSegConfig.device_index=0` — adjust if C925e is not on index 0 (`v4l2-ctl --list-devices` on Linux)
@@ -100,8 +102,8 @@ Creates QApplication → MainWindow. MainWindow bootstraps GameState, VisionCont
 
 ### Data Flow
 OAK-D Lite → BirdseyeService → VisionController (`_poll_timer`, IDLE/CARD_READING) → CardDetector → `frame_ready`/`cards_detected` → MainWindow.
-Logitech C925e → ChipSegService → VisionController (`_chip_poll_timer`, always-on) → ChipSegmentor → `chip_frame_ready`/`chips_detected` → MainWindow.
-GameState phase changes → VisionController mode switching (IDLE ↔ CARD_READING). GUI arm commands → ArmRosBridge → ROS 2 topics/actions → PokerController → SimBridge/Gazebo or scservo_driver/hardware.
+Logitech C925e → ChipSegService → VisionController (`_chip_poll_timer`, event-driven inference) → ChipSegmentor → `chip_frame_ready`/`chips_detected` → MainWindow.
+GameState phase changes → VisionController mode switching (IDLE ↔ CARD_READING). GameState player actions (BET/CALL/RAISE/ALL_IN) → VisionController activates chip inference. GUI arm commands → ArmRosBridge → ROS 2 topics/actions → PokerController → SimBridge/Gazebo or scservo_driver/hardware.
 
 ## Conventions
 

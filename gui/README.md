@@ -15,9 +15,9 @@ python main.py
 
 - **Left Panel**: Game phase, 5 community card SVG slots, pot display, player list, game log, control buttons
 - **Right Panel**:
-  - FPS spinbox (1-60) + vision mode indicator
+  - Camera FPS spinbox (1-60, controls both cameras) + vision mode indicator
   - Primary OAK-D Lite feed (QLabel, expands to fill available height) — birdseye card detection
-  - Chip Camera (C925e) header + compact 180px feed (QLabel) — always-on chip segmentation
+  - Chip Camera (C925e) header + compact 180px feed (QLabel) — event-driven chip segmentation (inference triggers on betting actions and showdown; live preview always streams)
   - Chip stack result label (updates when total chip value changes)
 
 ## Controls

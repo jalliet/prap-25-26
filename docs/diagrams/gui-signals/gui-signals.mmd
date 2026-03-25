@@ -6,10 +6,13 @@ flowchart LR
             S2["on_pot_change"]
             S3["on_card_detection_required"]
             S4["on_turn_change"]
+            S5["on_player_action"]
         end
         subgraph VC["VisionController"]
             V1["frame_ready"]
             V2["cards_detected"]
+            V3["chip_frame_ready"]
+            V4["chips_detected"]
         end
         subgraph ARB["ArmRosBridge"]
             A1["connection_changed"]
@@ -28,11 +31,14 @@ flowchart LR
             MW6["_on_cards_detected()"]
             MW7["_on_arm_connection_changed()"]
             MW8["_on_arm_move_completed()"]
+            MW9["_update_chip_feed()"]
+            MW10["_on_chips_detected()"]
         end
         subgraph VC_H["VisionController"]
             VC1["_handle_phase_change()"]
             VC2["_handle_pot_change()"]
             VC3["_handle_card_detection()"]
+            VC4["_handle_player_action()"]
         end
     end
 
@@ -44,8 +50,12 @@ flowchart LR
     S3 --> VC3
     S4 --> MW4
 
+    S5 --> VC4
+
     V1 --> MW5
     V2 --> MW6
+    V3 --> MW9
+    V4 --> MW10
 
     A1 --> MW7
     A2 --> MW8
@@ -55,8 +65,8 @@ flowchart LR
     classDef arb fill:#9B59B6,stroke:#6C3483,color:#fff
     classDef mw fill:#4A90E2,stroke:#2B5C8A,color:#fff
 
-    class S1,S2,S3,S4 gs
-    class V1,V2 vc
+    class S1,S2,S3,S4,S5 gs
+    class V1,V2,V3,V4 vc
     class A1,A2 arb
-    class MW1,MW2,MW3,MW4,MW5,MW6,MW7,MW8 mw
-    class VC1,VC2,VC3 vc
+    class MW1,MW2,MW3,MW4,MW5,MW6,MW7,MW8,MW9,MW10 mw
+    class VC1,VC2,VC3,VC4 vc

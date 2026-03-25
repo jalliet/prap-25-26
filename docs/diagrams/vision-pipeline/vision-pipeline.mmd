@@ -5,7 +5,7 @@ flowchart LR
     CSS["ChipSegService<br/>cv2.VideoCapture"]
 
     VC["VisionController<br/>_poll_timer @ FPS Hz"]
-    CHIP_TIMER["VisionController<br/>_chip_poll_timer (always-on)"]
+    CHIP_TIMER["VisionController<br/>_chip_poll_timer (event-driven)"]
 
     CD["CardDetector<br/>YOLOv8"]
     CHI["ChipSegmentor<br/>YOLOv8 Seg"]
@@ -39,11 +39,16 @@ flowchart LR
 
     PASS --> SIG_F
 
+    GS_ACT["GameState<br/>on_player_action<br/>on_phase_change"]
+    GATE{"_chip_inference_active?"}
+
     C925e --> CSS
     CSS -->|"get_frame()"| CHIP_TIMER
-    CHIP_TIMER --> CHI
+    CHIP_TIMER -->|"always"| SIG_CF
+    CHIP_TIMER --> GATE
+    GS_ACT -->|"BET/CALL/RAISE/ALL_IN<br/>SHOWDOWN"| GATE
+    GATE -->|"yes"| CHI
     CHI -->|"ChipSegmentationResult"| DEDUP_CHIP
-    CHI -->|"raw frame"| SIG_CF
     DEDUP_CHIP -->|"total changed?"| SIG_CH
 
     SIG_F -->|"convert_cv_qt()"| FEED
@@ -56,7 +61,10 @@ flowchart LR
     classDef signal fill:#50C878,stroke:#2D7A47,color:#fff
     classDef ui fill:#C75050,stroke:#8A2D2D,color:#fff
 
+    classDef gate fill:#FFD700,stroke:#B8960F,color:#000
+
     class OAK,BS,C925e,CSS camera
     class CD,CHI,PASS detect
     class SIG_F,SIG_C,SIG_CF,SIG_CH,DEDUP_C,DEDUP_CHIP,DRAW signal
     class FEED,LOG,CHIP_FEED,CHIP_LBL ui
+    class GS_ACT,GATE gate

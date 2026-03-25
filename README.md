@@ -64,7 +64,7 @@ Core game logic in `poker/` — card/deck management, chip stacks, player state,
 ### Vision System
 Dual-camera computer vision pipeline using YOLOv8 models:
 - **Card Detector** (`OAK-D Lite`) — identifies playing cards using `vision/models/Card_detection_large_best.pt`. Detection can be toggled via "Toggle Card Detection" in the dashboard, which overlays bounding boxes and labels on the primary feed.
-- **Chip Segmentor** (`Logitech C925e`) — counts chips by colour using `vision/models/Chip_segmentation_large_best.pt`. Runs as an always-on background pipeline on the dedicated secondary camera; the chip stack total is shown in the right panel.
+- **Chip Segmentor** (`Logitech C925e`) — counts chips by colour using `vision/models/Chip_segmentation_large_best.pt`. Runs on the dedicated secondary camera with event-driven inference — YOLO only triggers after betting actions (call/bet/raise/all-in) or during showdown; the live preview always streams. The chip stack total is shown in the right panel.
 
 Model weights are gitignored. Place them in `vision/models/`:
 ```

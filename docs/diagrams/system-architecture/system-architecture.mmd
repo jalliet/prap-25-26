@@ -4,8 +4,9 @@ graph TB
     end
 
     subgraph Services["Services Layer"]
-        VC["VisionController<br/>Singleton · QTimer polling"]
+        VC["VisionController<br/>Singleton · Dual QTimer polling"]
         CS["BirdseyeService<br/>OAK-D DepthAI"]
+        CSS["ChipSegService<br/>C925e · cv2.VideoCapture"]
         ARB["ArmRosBridge<br/>Singleton · Optional ROS 2"]
     end
 
@@ -26,14 +27,15 @@ graph TB
         GAZ["Gazebo<br/>SO-101 Simulation"]
     end
 
-    VC -->|"frame_ready<br/>cards_detected"| MW
+    VC -->|"frame_ready · cards_detected<br/>chip_frame_ready · chips_detected"| MW
     GS -->|"phase / pot / turn<br/>signals"| MW
     ARB -->|"connection_changed<br/>move_completed"| MW
 
     VC --> CS
+    VC --> CSS
     VC --> CD
     VC --> CHI
-    VC <-.->|"auto mode<br/>switching"| GS
+    VC <-.->|"auto mode switching<br/>+ event-driven inference"| GS
     VC -.->|"request_arm_move()"| ARB
 
     GS --> PM
@@ -50,7 +52,7 @@ graph TB
     classDef ros fill:#9B59B6,stroke:#6C3483,color:#fff
 
     class MW gui
-    class VC,CS,ARB svc
+    class VC,CS,CSS,ARB svc
     class CD,CHI vis
     class GS,PM poker
     class CTRL,SB,DRV,GAZ ros
