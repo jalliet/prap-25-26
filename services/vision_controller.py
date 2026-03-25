@@ -3,6 +3,7 @@ from services.birdseye_service import BirdseyeService, BirdseyeConfig
 from services.chip_seg_service import ChipSegService, ChipSegConfig
 from enum import Enum, auto
 from poker.game_state import GameState, GamePhase
+from poker.action import Action, ActionType
 from vision.card_detector import CardDetector
 from vision.chip_segmentor import ChipSegmentor
 
@@ -73,6 +74,9 @@ class VisionController(QObject):
         self._last_card_set: frozenset = frozenset()
         self._last_chip_total: int = -1  # -1 sentinel: first result always emits
 
+        # Chip inference gate — only run YOLO when game logic requests it
+        self._chip_inference_active: bool = False
+
         # Detectors
         self.card_detector = CardDetector(
             model_path='vision/models/Card_detection_large_best.pt')
@@ -126,21 +130,16 @@ class VisionController(QObject):
     # ------------------------------------------------------------------
 
     def set_fps(self, fps: int):
-        """Update OAK-D polling rate and hardware FPS."""
+        """Update polling rate and hardware FPS for both cameras."""
         if fps < 1:
             return
         print(f"VisionController: Setting FPS to {fps}")
         self._poll_timer.setInterval(1000 // fps)
+        self._chip_poll_timer.setInterval(1000 // fps)
         try:
             self.camera_service.set_fps(fps)
         except Exception as e:
-            print(f"VisionController: failed to set camera fps: {e}")
-
-    def set_chip_fps(self, fps: int):
-        """Update chip camera polling rate."""
-        if fps < 1:
-            return
-        self._chip_poll_timer.setInterval(1000 // fps)
+            print(f"VisionController: failed to set OAK-D fps: {e}")
         try:
             self.chip_seg_service.set_fps(fps)
         except Exception as e:
@@ -162,6 +161,7 @@ class VisionController(QObject):
         game_state.on_phase_change.connect(self._handle_phase_change)
         game_state.on_card_detection_required.connect(self._handle_card_detection)
         game_state.on_pot_change.connect(self._handle_pot_change)
+        game_state.on_player_action.connect(self._handle_player_action)
 
     def connect_to_arm_bridge(self, bridge):
         """Connect the vision controller to the arm ROS bridge."""
@@ -179,7 +179,10 @@ class VisionController(QObject):
 
     def _handle_phase_change(self, phase: GamePhase):
         print(f"VisionController: Phase changed to {phase.name}")
-        if phase != GamePhase.SHOWDOWN:
+        if phase == GamePhase.SHOWDOWN:
+            self._chip_inference_active = True
+        else:
+            self._chip_inference_active = False
             self.set_mode(VisionMode.IDLE)
 
     def _handle_card_detection(self, cards):
@@ -188,6 +191,12 @@ class VisionController(QObject):
 
     def _handle_pot_change(self, total_pot: int):
         print(f"VisionController: Pot updated to {total_pot}.")
+
+    def _handle_player_action(self, action: Action):
+        """Activate chip inference after betting actions."""
+        if action.action_type in (ActionType.CALL, ActionType.BET,
+                                  ActionType.RAISE, ActionType.ALL_IN):
+            self._chip_inference_active = True
 
     # ------------------------------------------------------------------
     # Frame processing
@@ -225,8 +234,12 @@ class VisionController(QObject):
         if frame is None:
             return
 
-        result = self.chip_segmentor.process(frame)
         self.chip_frame_ready.emit(frame)
+
+        if not self._chip_inference_active:
+            return
+
+        result = self.chip_segmentor.process(frame)
 
         # Only emit chips_detected when the total chip value changes
         new_total = result["stack"].total

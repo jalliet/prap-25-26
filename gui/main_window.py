@@ -202,7 +202,7 @@ class MainWindow(QMainWindow):
         right_layout.setContentsMargins(20, 20, 20, 20)
         right_layout.setSpacing(10)
 
-        cam_header = QLabel("Poker Camera Feed")
+        cam_header = QLabel("Birdseye Feed")
         cam_header.setObjectName("cameraHeaderLabel")
         cam_header.setAlignment(Qt.AlignCenter)
         right_layout.addWidget(cam_header)
@@ -213,7 +213,7 @@ class MainWindow(QMainWindow):
         fps_layout.setAlignment(Qt.AlignCenter)
         fps_layout.setContentsMargins(0, 0, 0, 0)
         
-        fps_label = QLabel("Feed FPS:")
+        fps_label = QLabel("Camera FPS:")
         self.fps_spinbox = QSpinBox()
         self.fps_spinbox.setRange(1, 60)
         self.fps_spinbox.setValue(self.vision_controller.fps)
@@ -239,7 +239,7 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(self.camera_feed, 1)
 
         # Chip camera section — C925e secondary feed (fixed 180px height)
-        chip_header = QLabel("Chip Camera (C925e)")
+        chip_header = QLabel("Chip SideView Feed")
         chip_header.setObjectName("cameraHeaderLabel")
         chip_header.setAlignment(Qt.AlignCenter)
         right_layout.addWidget(chip_header)
