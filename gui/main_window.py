@@ -1,6 +1,8 @@
 import os
+import cv2
 import numpy as np
-from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, 
+from datetime import datetime
+from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
                                QLabel, QFrame, QListWidget, QTextEdit, QSizePolicy, QSpinBox, QSplitter, QPushButton)
 from PySide6.QtCore import Qt, QTimer, QSize
 from PySide6.QtSvgWidgets import QSvgWidget
@@ -9,6 +11,7 @@ from services.vision_controller import VisionController, VisionMode
 from services.arm_ros_bridge import ArmRosBridge
 from poker.game_state import GameState, GamePhase
 from poker.player import Player
+from vision.draw_utils import draw_card_detections
 
 from poker.action import Action, ActionType
 from dataclasses import dataclass
@@ -482,6 +485,52 @@ class MainWindow(QMainWindow):
             self.log_message(f"Arm move complete (error: {final_error:.3f} rad)")
         else:
             self.log_message(f"Arm move failed (error: {final_error:.3f})")
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_B:
+            self._debug_birdseye()
+        elif event.key() == Qt.Key_C:
+            self._debug_chip_seg()
+        else:
+            super().keyPressEvent(event)
+
+    def _debug_birdseye(self):
+        """One-shot card detection: annotate + save to debug_inference/birdseye/."""
+        frame = self.vision_controller.get_frame()
+        if frame is None:
+            self.log_message("Debug birdseye: no frame available")
+            return
+
+        detections = self.vision_controller.card_detector.process(frame)
+        draw_card_detections(frame, detections)
+
+        out_dir = os.path.join(os.getcwd(), "debug_inference", "birdseye")
+        os.makedirs(out_dir, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        path = os.path.join(out_dir, f"{ts}.png")
+        cv2.imwrite(path, frame)
+        self.log_message(f"Debug birdseye saved: {path}")
+
+    def _debug_chip_seg(self):
+        """One-shot chip segmentation: annotate + save to debug_inference/chip_seg/."""
+        frame = self.vision_controller.chip_seg_service.get_frame()
+        if frame is None:
+            self.log_message("Debug chip seg: no frame available")
+            return
+
+        model = self.vision_controller.chip_segmentor.model
+        if model is not None:
+            results = model(frame, verbose=False)
+            annotated = results[0].plot()
+        else:
+            annotated = frame.copy()
+
+        out_dir = os.path.join(os.getcwd(), "debug_inference", "chip_seg")
+        os.makedirs(out_dir, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        path = os.path.join(out_dir, f"{ts}.png")
+        cv2.imwrite(path, annotated)
+        self.log_message(f"Debug chip seg saved: {path}")
 
     def closeEvent(self, event):
         # Stop simulation if running

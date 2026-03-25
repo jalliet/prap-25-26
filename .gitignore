@@ -12,8 +12,9 @@ __pycache__/
 .pytest_cache/
 docs/PLAN_*.md
 
-# YOLO model weights (too large for git, use shared drive or Git LFS)
+# Vision 
 *.pt
+debug_inference/
 
 # ROS 2 build artifacts
 build/

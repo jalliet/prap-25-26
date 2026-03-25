@@ -28,6 +28,10 @@ python main.py
 - **Start Simulation** — launches `ros2 launch poker_bringup poker_arm.launch.py mode:=sim` as a subprocess
 - **Stop Simulation** — sends SIGINT/SIGTERM to the simulation process group
 
+### Keyboard Shortcuts
+- **B** — one-shot birdseye card detection: grabs the current OAK-D frame, runs YOLO card detection, saves annotated PNG to `debug_inference/birdseye/`
+- **C** — one-shot chip segmentation: grabs the current C925e frame, runs YOLO chip segmentation, saves annotated PNG to `debug_inference/chip_seg/`
+
 ## Styling
 
 Dark theme defined in `styles.qss`

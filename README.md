@@ -100,6 +100,7 @@ bash scripts/start_game.sh
 - **Toggle Card Detection** — enables live YOLOv8 card detection with bounding box overlays on the primary OAK-D feed. Detections are logged in the game log. Two camera feeds are visible in the right panel: the primary OAK-D birdseye feed (top) and the compact C925e chip feed (bottom).
 - **Start/Stop Simulation** — launches or stops the ROS 2 Gazebo simulation (`ros2 launch poker_bringup poker_arm.launch.py mode:=sim`) directly from the GUI.
 - **Start Hand / Test Bet** — manual triggers for testing game state transitions.
+- **Debug Inference (keyboard)** — press **B** to run one-shot card detection on the OAK-D feed and save the annotated frame to `debug_inference/birdseye/`. Press **C** for chip segmentation on the C925e feed, saved to `debug_inference/chip_seg/`. Timestamped PNGs are saved and the path is logged.
 
 ### With ROS 2 Simulation
 Requires ROS 2 Jazzy and a built workspace.
