@@ -14,7 +14,7 @@ import time
 import cv2
 import numpy as np
 
-OUT_DIR = "debug-inference/camera_probe"
+OUT_DIR = "debug_inference/camera_probe"
 MAX_INDEX = 5
 FRAMES_PER_INDEX = 30
 SETTLE_DELAY_S = 0.05

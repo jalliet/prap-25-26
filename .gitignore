@@ -14,7 +14,7 @@ docs/PLAN_*.md
 
 # Vision
 *.pt
-debug-inference/
+debug_inference/
 
 # ROS 2 build artifacts
 build/
