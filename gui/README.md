@@ -1,33 +1,37 @@
 # Poker Robot Dashboard GUI
 
-This directory contains the PySide6-based Graphical User Interface for the Poker Robot Arm Project.
+PySide6-based dashboard for the Poker Robot Arm Project. See the [Root README](../README.md) for environment setup.
 
-## Setup
-
-Please refer to the [Root README](../README.md) for environment setup and installation instructions.
-
-## Running the Application
-
-Ensure your virtual environment is activated:
+## Running
 
 ```bash
-source ../venv/bin/activate
+source venv/bin/activate
+python main.py
 ```
 
-To launch the dashboard, run the start script from the project root:
+## Layout
 
-```bash
-./scripts/start_game.sh
-```
+1200x800 window with a 30/70 QSplitter:
 
-Or run the entry point manually:
+- **Left Panel**: Game phase, 5 community card SVG slots, pot display, player list, game log, control buttons
+- **Right Panel**:
+  - Camera FPS spinbox (1-60, controls both cameras) + vision mode indicator
+  - Primary OAK-D Lite feed (QLabel, expands to fill available height) — birdseye card detection
+  - Chip Camera (C925e) header + compact 180px feed (QLabel) — event-driven chip segmentation (inference triggers on betting actions and showdown; live preview always streams)
+  - Chip stack result label (updates when total chip value changes)
 
-```bash
-python3 main.py
-```
+## Controls
 
-## Features
+- **Start Hand** — begins a new poker hand, resets game state
+- **Test Bet** — triggers a test betting action for debugging
+- **Toggle Card Detection** — enables/disables YOLOv8 card detection with bounding box overlays on the camera feed. Detections are logged when the detected set changes.
+- **Start Simulation** — launches `ros2 launch poker_bringup poker_arm.launch.py mode:=sim` as a subprocess
+- **Stop Simulation** — sends SIGINT/SIGTERM to the simulation process group
 
-*   **Game State Panel**: Displays community cards, pot size, player list, and game logs.
-*   **Camera Feed**: Live 1080p preview from the OAK-D Lite camera.
-*   **FPS Control**: Adjust the camera refresh rate (1-60 FPS) via the UI spinner.
+### Keyboard Shortcuts
+- **B** — one-shot birdseye card detection: grabs the current OAK-D frame, runs YOLO card detection, saves annotated PNG to `debug_inference/birdseye/`
+- **C** — one-shot chip segmentation: grabs the current C925e frame, runs YOLO chip segmentation, saves annotated PNG to `debug_inference/chip_seg/`
+
+## Styling
+
+Dark theme defined in `styles.qss`

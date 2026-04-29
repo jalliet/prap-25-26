@@ -1,0 +1,70 @@
+flowchart LR
+    OAK["OAK-D Lite<br/>1080p Sensor"]
+    BS["BirdseyeService<br/>DepthAI Pipeline<br/>1280×720 preview"]
+    C925e["Logitech C925e<br/>1080p USB Webcam"]
+    CSS["ChipSegService<br/>cv2.VideoCapture"]
+
+    VC["VisionController<br/>_poll_timer @ FPS Hz"]
+    CHIP_TIMER["VisionController<br/>_chip_poll_timer (event-driven)"]
+
+    CD["CardDetector<br/>YOLOv8"]
+    CHI["ChipSegmentor<br/>YOLOv8 Seg"]
+    PASS["Pass-through"]
+
+    DEDUP_C["Dedup<br/>frozenset(rank,suit)"]
+    DEDUP_CHIP["Dedup<br/>stack.total != last"]
+    DRAW["draw_card_detections()<br/>bbox + label overlay"]
+
+    SIG_F["frame_ready signal"]
+    SIG_C["cards_detected signal"]
+    SIG_CF["chip_frame_ready signal"]
+    SIG_CH["chips_detected signal"]
+
+    FEED["MainWindow<br/>OAK-D Feed QLabel"]
+    LOG["MainWindow<br/>Game Log"]
+    CHIP_FEED["MainWindow<br/>Chip Feed QLabel"]
+    CHIP_LBL["MainWindow<br/>Chip Stack Label"]
+
+    OAK --> BS
+    BS -->|"get_frame()"| VC
+
+    VC -->|"CARD_READING"| CD
+    VC -->|"IDLE"| PASS
+
+    CD -->|"List<CardDetection>"| DEDUP_C
+    CD -->|"detections"| DRAW
+    DRAW -->|"annotated frame"| SIG_F
+
+    DEDUP_C -->|"changed?"| SIG_C
+
+    PASS --> SIG_F
+
+    GS_ACT["GameState<br/>on_player_action<br/>on_phase_change"]
+    GATE{"_chip_inference_active?"}
+
+    C925e --> CSS
+    CSS -->|"get_frame()"| CHIP_TIMER
+    CHIP_TIMER -->|"always"| SIG_CF
+    CHIP_TIMER --> GATE
+    GS_ACT -->|"BET/CALL/RAISE/ALL_IN<br/>SHOWDOWN"| GATE
+    GATE -->|"yes"| CHI
+    CHI -->|"ChipSegmentationResult"| DEDUP_CHIP
+    DEDUP_CHIP -->|"total changed?"| SIG_CH
+
+    SIG_F -->|"convert_cv_qt()"| FEED
+    SIG_C --> LOG
+    SIG_CF -->|"convert_cv_qt()"| CHIP_FEED
+    SIG_CH --> CHIP_LBL
+
+    classDef camera fill:#4A90E2,stroke:#2B5C8A,color:#fff
+    classDef detect fill:#E8A838,stroke:#A06B1F,color:#fff
+    classDef signal fill:#50C878,stroke:#2D7A47,color:#fff
+    classDef ui fill:#C75050,stroke:#8A2D2D,color:#fff
+
+    classDef gate fill:#FFD700,stroke:#B8960F,color:#000
+
+    class OAK,BS,C925e,CSS camera
+    class CD,CHI,PASS detect
+    class SIG_F,SIG_C,SIG_CF,SIG_CH,DEDUP_C,DEDUP_CHIP,DRAW signal
+    class FEED,LOG,CHIP_FEED,CHIP_LBL ui
+    class GS_ACT,GATE gate

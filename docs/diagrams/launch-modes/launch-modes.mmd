@@ -1,0 +1,66 @@
+flowchart LR
+    subgraph Modes["Launch Modes"]
+        SIM["mode=sim"]
+        PC["mode=pc_hardware"]
+        PI["mode=pi_hardware"]
+        PIH["mode=pi_hardware_headless"]
+        DO["dashboard_only=true"]
+    end
+
+    subgraph Simulation["Simulation"]
+        GAZ["Gazebo + SO-101"]
+        BRIDGE["SimBridge"]
+        JSB["joint_state_broadcaster"]
+        FPC["forward_position_controller"]
+    end
+
+    subgraph Core["Core"]
+        CTRL["Controller Node"]
+        DASH["Dashboard Node"]
+    end
+
+    subgraph Hardware["Hardware"]
+        DRV["scservo_driver"]
+        RSP["robot_state_publisher"]
+    end
+
+    SIM --> GAZ
+    SIM --> BRIDGE
+    SIM --> JSB
+    SIM --> FPC
+    SIM --> CTRL
+    SIM --> DASH
+
+    PC --> GAZ
+    PC --> BRIDGE
+    PC --> JSB
+    PC --> FPC
+    PC --> CTRL
+    PC --> DASH
+    PC --> DRV
+    PC --> RSP
+
+    PI --> GAZ
+    PI --> BRIDGE
+    PI --> JSB
+    PI --> FPC
+    PI --> CTRL
+    PI --> DASH
+    PI --> DRV
+    PI --> RSP
+
+    PIH --> CTRL
+    PIH --> DRV
+    PIH --> RSP
+
+    DO --> DASH
+
+    classDef mode fill:#E8A838,stroke:#A06B1F,color:#fff
+    classDef simn fill:#9B59B6,stroke:#6C3483,color:#fff
+    classDef core fill:#4A90E2,stroke:#2B5C8A,color:#fff
+    classDef hw fill:#C75050,stroke:#8A2D2D,color:#fff
+
+    class SIM,PC,PI,PIH,DO mode
+    class GAZ,BRIDGE,JSB,FPC simn
+    class CTRL,DASH core
+    class DRV,RSP hw

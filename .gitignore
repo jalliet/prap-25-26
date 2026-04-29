@@ -9,4 +9,25 @@ __pycache__/
 .DS_Store
 .trae
 *.log
+.pytest_cache/
 docs/PLAN_*.md
+
+# Vision
+*.pt
+debug_inference/
+
+# ROS 2 build artifacts
+build/
+install/
+log/
+src/log/
+
+# Vision model weights directory
+vision/
+
+# Simulation artifacts
+debug_robot.urdf
+
+# Docs
+docs/diagrams/output/**/*.png
+docs/plans/

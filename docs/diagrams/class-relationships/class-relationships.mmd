@@ -1,0 +1,103 @@
+classDiagram
+    class MainWindow {
+        +game_state: GameState
+        +vision_controller: VisionController
+        +arm_bridge: ArmRosBridge
+        +sim_process: Popen
+        +start_simulation()
+        +stop_simulation()
+        +toggle_card_detection()
+    }
+
+    class VisionController {
+        &lt;&lt;Singleton&gt;&gt;
+        +camera_service: BirdseyeService
+        +card_detector: CardDetector
+        +chip_segmentor: ChipSegmentor
+        +mode: VisionMode
+        +process_frame()
+        +set_mode(mode)
+        +request_arm_move()
+        frame_ready: Signal
+        cards_detected: Signal
+    }
+
+    class ArmRosBridge {
+        &lt;&lt;Singleton&gt;&gt;
+        +is_available: bool
+        +move_pose(x, y, z, pitch, roll, duration)
+        +move_joints(joints, duration)
+        +publish_pose_proposal()
+        +cancel_move()
+        connection_changed: Signal
+        move_completed: Signal
+    }
+
+    class GameState {
+        +players: List~Player~
+        +phase: GamePhase
+        +pot: ChipStack
+        +community_cards: List~Card~
+        +deck: Deck
+        +start_new_hand()
+        +process_action(action)
+        +next_turn()
+        on_phase_change: Signal
+        on_pot_change: Signal
+    }
+
+    class BaseDetector~T~ {
+        &lt;&lt;Abstract&gt;&gt;
+        +model: YOLO
+        +process(image)* T
+    }
+
+    class CardDetector {
+        +process(image) List~CardDetection~
+    }
+
+    class ChipSegmentor {
+        +process(image) ChipSegmentationResult
+    }
+
+    class BirdseyeService {
+        +config: BirdseyeConfig
+        +start()
+        +stop()
+        +get_frame() ndarray
+        +set_fps(fps)
+    }
+
+    class Player {
+        +player_id: int
+        +name: str
+        +stack: ChipStack
+        +status: PlayerStatus
+        +fold()
+        +bet(amount) int
+    }
+
+    class ChipStack {
+        +total: int
+        +add(colour, n)
+        +remove(colour, n)
+        +from_total(amount)$ ChipStack
+    }
+
+    class Card {
+        +rank: Rank
+        +suit: Suit
+    }
+
+    MainWindow --> VisionController
+    MainWindow --> ArmRosBridge
+    MainWindow --> GameState
+    VisionController --> BirdseyeService
+    VisionController --> CardDetector
+    VisionController --> ChipSegmentor
+    BaseDetector <|-- CardDetector
+    BaseDetector <|-- ChipSegmentor
+    GameState --> Player
+    GameState --> Card
+    GameState --> ChipStack
+    Player --> ChipStack

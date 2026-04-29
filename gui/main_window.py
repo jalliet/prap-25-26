@@ -1,17 +1,23 @@
 import os
+import cv2
 import numpy as np
-from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, 
+from datetime import datetime
+from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
                                QLabel, QFrame, QListWidget, QTextEdit, QSizePolicy, QSpinBox, QSplitter, QPushButton)
 from PySide6.QtCore import Qt, QTimer, QSize
 from PySide6.QtSvgWidgets import QSvgWidget
 from gui.utils import convert_cv_qt
 from services.vision_controller import VisionController, VisionMode
+from services.arm_ros_bridge import ArmRosBridge
 from poker.game_state import GameState, GamePhase
 from poker.player import Player
+from vision.draw_utils import draw_card_detections
 
 from poker.action import Action, ActionType
 from dataclasses import dataclass
 from typing import Tuple
+import subprocess
+import signal
 
 @dataclass(frozen=True)
 class WindowConfig:
@@ -60,9 +66,16 @@ class MainWindow(QMainWindow):
         self.vision_controller = VisionController()
         
         # Connect Vision Controller to Game State
-        # This link allows the vision system to autonomously react to game phase changes
         self.vision_controller.connect_to_game_state(self.game_state)
+
+        # Initialise Arm Bridge (gracefully degrades if ROS 2 unavailable)
+        self.arm_bridge = ArmRosBridge()
+        self.vision_controller.connect_to_arm_bridge(self.arm_bridge)
+        self.arm_bridge.connection_changed.connect(self._on_arm_connection_changed)
+        self.arm_bridge.move_completed.connect(self._on_arm_move_completed)
         
+        # Simulation process handle (set when user starts the sim)
+        self.sim_process = None
         # Add some dummy players for testing purposes
         self.game_state.add_player(Player(0, "Hero", 0))
         self.game_state.add_player(Player(1, "Villain 1", 1))
@@ -169,7 +182,20 @@ class MainWindow(QMainWindow):
         self.btn_bet_test = QPushButton("Test Bet")
         self.btn_bet_test.clicked.connect(self.bet_test)
         controls_layout.addWidget(self.btn_bet_test)
-        
+
+        self.btn_toggle_detection = QPushButton("Toggle Card Detection")
+        self.btn_toggle_detection.clicked.connect(self.toggle_card_detection)
+        controls_layout.addWidget(self.btn_toggle_detection)
+
+        # Simulation controls
+        self.btn_start_sim = QPushButton("Start Simulation")
+        self.btn_start_sim.clicked.connect(self.start_simulation)
+        controls_layout.addWidget(self.btn_start_sim)
+
+        self.btn_stop_sim = QPushButton("Stop Simulation")
+        self.btn_stop_sim.clicked.connect(self.stop_simulation)
+        controls_layout.addWidget(self.btn_stop_sim)
+
         left_layout.addWidget(controls_group)
 
         # Right Panel (Camera Feed)
@@ -179,7 +205,7 @@ class MainWindow(QMainWindow):
         right_layout.setContentsMargins(20, 20, 20, 20)
         right_layout.setSpacing(10)
 
-        cam_header = QLabel("Poker Camera Feed")
+        cam_header = QLabel("Birdseye Feed")
         cam_header.setObjectName("cameraHeaderLabel")
         cam_header.setAlignment(Qt.AlignCenter)
         right_layout.addWidget(cam_header)
@@ -190,7 +216,7 @@ class MainWindow(QMainWindow):
         fps_layout.setAlignment(Qt.AlignCenter)
         fps_layout.setContentsMargins(0, 0, 0, 0)
         
-        fps_label = QLabel("Feed FPS:")
+        fps_label = QLabel("Camera FPS:")
         self.fps_spinbox = QSpinBox()
         self.fps_spinbox.setRange(1, 60)
         self.fps_spinbox.setValue(self.vision_controller.fps)
@@ -206,7 +232,7 @@ class MainWindow(QMainWindow):
         fps_layout.addWidget(self.mode_label)
         right_layout.addWidget(fps_container)
 
-        # Feed Container
+        # Feed Container — OAK-D Lite primary feed (expands to fill available space)
         self.camera_feed = QLabel("Camera Feed Placeholder")
         self.camera_feed.setObjectName("cameraFeed")
         self.camera_feed.setAlignment(Qt.AlignCenter)
@@ -214,6 +240,25 @@ class MainWindow(QMainWindow):
         self.camera_feed.setScaledContents(True)
         self.camera_feed.setStyleSheet("background-color: #111; border: 1px solid #333;")
         right_layout.addWidget(self.camera_feed, 1)
+
+        # Chip camera section — C925e secondary feed (fixed 180px height)
+        chip_header = QLabel("Chip SideView Feed")
+        chip_header.setObjectName("cameraHeaderLabel")
+        chip_header.setAlignment(Qt.AlignCenter)
+        right_layout.addWidget(chip_header)
+
+        self.chip_feed = QLabel("Chip Feed")
+        self.chip_feed.setObjectName("cameraFeed")
+        self.chip_feed.setAlignment(Qt.AlignCenter)
+        self.chip_feed.setFixedHeight(180)
+        self.chip_feed.setScaledContents(True)
+        self.chip_feed.setStyleSheet("background-color: #111; border: 1px solid #333;")
+        right_layout.addWidget(self.chip_feed)
+
+        self.chip_result_label = QLabel("Chip stack: —")
+        self.chip_result_label.setObjectName("infoLabel")
+        self.chip_result_label.setAlignment(Qt.AlignCenter)
+        right_layout.addWidget(self.chip_result_label)
 
         # Add panels to splitter with initial ratio (30% left, 70% right)
         self.splitter.addWidget(left_panel)
@@ -235,7 +280,10 @@ class MainWindow(QMainWindow):
         
         # Connect Vision Controller Signals
         self.vision_controller.frame_ready.connect(self.update_frame)
-        
+        self.vision_controller.cards_detected.connect(self._on_cards_detected)
+        self.vision_controller.chip_frame_ready.connect(self._update_chip_feed)
+        self.vision_controller.chips_detected.connect(self._on_chips_detected)
+
         # Start Service
         self.vision_controller.start()
         
@@ -267,6 +315,26 @@ class MainWindow(QMainWindow):
                 self.log_message(f"Error: {e}")
             self.update_player_list()
 
+    def toggle_card_detection(self):
+        """Toggle between CARD_READING and IDLE vision modes."""
+        if self.vision_controller.mode == VisionMode.CARD_READING:
+            self.vision_controller.set_mode(VisionMode.IDLE)
+            self.log_message("Card detection OFF")
+        else:
+            self.vision_controller.set_mode(VisionMode.CARD_READING)
+            self.log_message("Card detection ON")
+        self.update_mode_label()
+
+    def _on_cards_detected(self, detections):
+        """Handle card detection results. Only called when detected set changes."""
+        valid = [d for d in detections if d["rank"] is not None and d["suit"] is not None]
+        if valid:
+            valid.sort(key=lambda d: d["bbox"]["x"])
+            card_strs = [f"{d['rank']}{d['suit']}" for d in valid]
+            self.log_message(f"Detected: {', '.join(card_strs)}")
+        else:
+            self.log_message("No cards detected")
+
     def update_player_list(self):
         self.player_list.clear()
         for p in self.game_state.players:
@@ -276,12 +344,62 @@ class MainWindow(QMainWindow):
         self.phase_label.setText(f"Phase: {phase.name}")
         self.log_message(f"Game Phase: {phase.name}")
         self.update_player_list()
-        self.update_mode_label()
+
+    def start_simulation(self):
+        """Start the ROS2/Gazebo simulation by launching the bringup launch file.
+
+        This runs a bash subshell that sources the local `install/setup.bash`
+        (if present) so the workspace and ROS 2 environment are available.
+        The launched process is stored so we can stop it later.
+        """
+        if self.sim_process is not None:
+            self.log_message("Simulation already running")
+            return
+
+        # Construct command: source workspace then launch poker_bringup
+        workspace_setup = os.path.join(os.getcwd(), "install", "setup.bash")
+        if os.path.exists(workspace_setup):
+            cmd = f"bash -lc 'source {workspace_setup} && ros2 launch poker_bringup poker_arm.launch.py mode:=sim'"
+        else:
+            # Fallback to attempting a direct ros2 launch (user must have ROS sourced externally)
+            cmd = "bash -lc 'ros2 launch poker_bringup poker_arm.launch.py mode:=sim'"
+
+        try:
+            # Start in its own process group so we can terminate whole group later
+            self.sim_process = subprocess.Popen(cmd, shell=True, preexec_fn=os.setsid,
+                                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            self.log_message("Started simulation (ros2 launch)")
+        except Exception as e:
+            self.log_message(f"Failed to start simulation: {e}")
+
+    def stop_simulation(self):
+        """Terminate the simulation process started with `start_simulation`.
+
+        Sends SIGINT to the process group then SIGTERM if needed.
+        """
+        if self.sim_process is None:
+            self.log_message("No simulation process to stop")
+            return
+
+        try:
+            os.killpg(self.sim_process.pid, signal.SIGINT)
+        except Exception:
+            pass
+
+        try:
+            self.sim_process.wait(timeout=5)
+        except Exception:
+            try:
+                os.killpg(self.sim_process.pid, signal.SIGTERM)
+            except Exception:
+                pass
+
+        self.sim_process = None
+        self.log_message("Simulation stopped")
 
     def on_pot_change(self, total: int):
         self.pot_label.setText(f"Pot: {total}")
         self.log_message(f"Pot updated: {total}")
-        self.update_mode_label()
 
     def on_cards_updated(self, cards):
         """
@@ -308,7 +426,7 @@ class MainWindow(QMainWindow):
                     r_code = '10'
                     
                 filename = f"{r_code}{card.suit.code}.svg"
-                filepath = os.path.join("assets", filename)
+                filepath = os.path.join(os.path.dirname(__file__), "..", "assets", filename)
                 
                 if os.path.exists(filepath):
                     slot.load(filepath)
@@ -320,46 +438,109 @@ class MainWindow(QMainWindow):
                 slot.load(b"") # Clear SVG
                 slot.setStyleSheet(self.config.card_slot.empty_style)
 
-        self.update_mode_label()
-
     def on_turn_change(self, player):
         if player:
             self.log_message(f"Turn: {player.name}")
             # Highlight player in list (optional)
 
+    _MODE_COLOURS = {
+        VisionMode.CARD_READING: "#00FFFF",  # Cyan
+        # IDLE falls back to the default yellow in update_mode_label
+    }
+
     def update_mode_label(self):
         """Updates the vision mode indicator."""
-        mode_name = self.vision_controller.mode.name
-        self.mode_label.setText(f"Mode: {mode_name}")
-        
-        # Simple colour coding
-        if mode_name == "HAND_MONITORING":
-            self.mode_label.setStyleSheet("font-weight: bold; color: #00FF00;") # Green
-        elif mode_name == "CARD_READING":
-            self.mode_label.setStyleSheet("font-weight: bold; color: #00FFFF;") # Cyan
-        elif mode_name == "CHIP_SEGMENTATION":
-            self.mode_label.setStyleSheet("font-weight: bold; color: #FFA500;") # Orange
-        else:
-            self.mode_label.setStyleSheet("font-weight: bold; color: yellow;")
+        mode = self.vision_controller.mode
+        self.mode_label.setText(f"Mode: {mode.name}")
+        colour = self._MODE_COLOURS.get(mode, "yellow")
+        self.mode_label.setStyleSheet(f"font-weight: bold; color: {colour};")
 
     def log_message(self, message):
         self.log_area.append(message)
 
     def update_frame(self, frame: np.ndarray):
-        """
-        Updates the camera feed with the latest frame from the VisionController.
-        Triggered by the frame_ready signal.
-        """
+        """Updates the primary (OAK-D) camera feed. Triggered by frame_ready."""
         if frame is not None:
             qt_img = convert_cv_qt(frame)
             self.camera_feed.setPixmap(qt_img)
-            
-        # Periodically check/update mode label just in case controller changed it internally
-        # (though ideally we'd have a signal for mode change too)
-        self.update_mode_label()
+
+    def _update_chip_feed(self, frame: np.ndarray):
+        """Updates the chip camera feed. Triggered by chip_frame_ready."""
+        if frame is not None:
+            qt_img = convert_cv_qt(frame)
+            self.chip_feed.setPixmap(qt_img)
+
+    def _on_chips_detected(self, result: dict):
+        """Updates the chip stack label. Triggered by chips_detected on total change."""
+        stack = result.get("stack")
+        if stack is not None:
+            self.chip_result_label.setText(f"Chip stack: {stack.total}")
+
+    def _on_arm_connection_changed(self, available: bool):
+        status = "Connected" if available else "Disconnected"
+        self.log_message(f"Arm Controller: {status}")
+
+    def _on_arm_move_completed(self, success: bool, final_error: float):
+        if success:
+            self.log_message(f"Arm move complete (error: {final_error:.3f} rad)")
+        else:
+            self.log_message(f"Arm move failed (error: {final_error:.3f})")
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_B:
+            self._debug_birdseye()
+        elif event.key() == Qt.Key_C:
+            self._debug_chip_seg()
+        else:
+            super().keyPressEvent(event)
+
+    def _debug_birdseye(self):
+        """One-shot card detection: annotate + save to debug_inference/birdseye/."""
+        frame = self.vision_controller.get_frame()
+        if frame is None:
+            self.log_message("Debug birdseye: no frame available")
+            return
+
+        detections = self.vision_controller.card_detector.process(frame)
+        draw_card_detections(frame, detections)
+
+        out_dir = os.path.join(os.getcwd(), "debug_inference", "birdseye")
+        os.makedirs(out_dir, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        path = os.path.join(out_dir, f"{ts}.png")
+        cv2.imwrite(path, frame)
+        self.log_message(f"Debug birdseye saved: {path}")
+
+    def _debug_chip_seg(self):
+        """One-shot chip segmentation: annotate + save to debug_inference/chip_seg/."""
+        frame = self.vision_controller.chip_seg_service.get_frame()
+        if frame is None:
+            self.log_message("Debug chip seg: no frame available")
+            return
+
+        model = self.vision_controller.chip_segmentor.model
+        if model is not None:
+            results = model(frame, verbose=False)
+            annotated = results[0].plot()
+        else:
+            annotated = frame.copy()
+
+        out_dir = os.path.join(os.getcwd(), "debug_inference", "chip_seg")
+        os.makedirs(out_dir, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        path = os.path.join(out_dir, f"{ts}.png")
+        cv2.imwrite(path, annotated)
+        self.log_message(f"Debug chip seg saved: {path}")
 
     def closeEvent(self, event):
+        # Stop simulation if running
+        try:
+            self.stop_simulation()
+        except Exception:
+            pass
+
         self.vision_controller.stop()
+        self.arm_bridge.shutdown()
         event.accept()
 
     def load_stylesheet(self):

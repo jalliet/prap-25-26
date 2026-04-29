@@ -5,39 +5,36 @@ from typing import Dict
 class ChipColour(Enum):
     """
     Represents standard poker chip colours with their associated monetary values.
-    
+
     This enumeration serves as the ground truth for chip denomination in the system.
     """
-    WHITE = 1
-    RED = 5
-    BLUE = 25
-    BLACK = 50
-    
+    RED = 1
+    BLUE = 5
+    WHITE = 20
+
     @property
     def code(self) -> str:
-        """Returns the short code for the chip colour (e.g., 'W', 'R')."""
+        """Returns the short code for the chip colour (e.g., 'R', 'B')."""
         codes = {
-            1: "W",
-            5: "R",
-            25: "B",
-            50: "BK"
+            1: "R",
+            5: "B",
+            20: "W",
         }
         return codes[self.value]
-    
+
     @classmethod
     def from_code(cls, code: str) -> 'ChipColour':
         """
         Factory method to create a ChipColour from a short code.
         Args:
-            code: The short code string (e.g., 'W', 'R', 'B', 'BK').
+            code: The short code string (e.g., 'R', 'B', 'W').
         Returns:
             The corresponding ChipColour enum member.
         """
         code_map = {
-            "W": cls.WHITE,
             "R": cls.RED,
             "B": cls.BLUE,
-            "BK": cls.BLACK
+            "W": cls.WHITE,
         }
         colour = code_map.get(code.upper())
         if colour is None:

@@ -1,43 +1,55 @@
-import cv2
-from typing import Optional, Callable
-from services.camera_service import CameraService, CameraConfig
+from typing import Optional
+from services.birdseye_service import BirdseyeService, BirdseyeConfig
+from services.chip_seg_service import ChipSegService, ChipSegConfig
 from enum import Enum, auto
 from poker.game_state import GameState, GamePhase
+from poker.action import Action, ActionType
+from vision.card_detector import CardDetector
+from vision.chip_segmentor import ChipSegmentor
 
-from PySide6.QtCore import QObject, Signal, QThread
+from PySide6.QtCore import QObject, Signal, QTimer
+from vision.draw_utils import draw_card_detections
 import numpy as np
 
+
 class VisionMode(Enum):
+    """Operational mode for the primary (OAK-D Lite) camera.
+
+    Chip segmentation runs independently on the secondary camera (C925e)
+    via its own QTimer and is not represented here.
     """
-    Operational modes for the Vision Controller.
-    
-    Each mode dictates the active detectors and the camera configuration required
-    to perform the specific computer vision task.
-    """
-    HAND_MONITORING = auto()  # Continuous video stream to track player hands and gestures.
-    CARD_READING = auto()     # High-resolution capture to identify card ranks and suits.
-    CHIP_SEGMENTATION = auto() # Side-view analysis for chip stack estimation (Future).
-    IDLE = auto()             # Camera active but no heavy processing.
+    CARD_READING = auto()  # OAK-D streams + CardDetector inference.
+    IDLE = auto()          # OAK-D streams, no inference.
+
 
 class VisionController(QObject):
-    """
-    Singleton controller for managing camera services and orchestrating vision processing.
-    
-    This class acts as the bridge between the high-level GameState and the low-level
-    Computer Vision modules. It switches modes based on game events to optimise
-    resource usage and data accuracy.
+    """Singleton orchestrator for the dual-camera vision pipeline.
+
+    Primary camera (OAK-D Lite, birdseye):
+        - Driven by _poll_timer
+        - IDLE: stream only; CARD_READING: YOLO card detection + overlay
+
+    Secondary camera (Logitech C925e, chip segmentation):
+        - Driven by _chip_poll_timer (always-on when running)
+        - Runs ChipSegmentor on every frame, emits chips_detected on change
+
+    Camera index note:
+        ChipSegConfig.device_index defaults to 0. Adjust via
+        ChipSegConfig(device_index=N) if the C925e is not on index 0.
+        On Linux: v4l2-ctl --list-devices
     """
     _instance = None
-    
-    # Signals for UI integration
-    frame_ready = Signal(np.ndarray)
+
+    # Primary camera signals
+    frame_ready = Signal(np.ndarray)      # OAK-D frame (with overlays if in CARD_READING)
+    cards_detected = Signal(list)         # List[CardDetection], emitted only on change
+
+    # Secondary camera signals
+    chip_frame_ready = Signal(np.ndarray) # C925e raw frame for GUI display
+    chips_detected = Signal(dict)         # ChipSegmentationResult, emitted only on change
 
     def __new__(cls):
         if cls._instance is None:
-            # Note: Inheriting QObject changes __new__ behavior slightly, 
-            # but for a singleton pattern we need to be careful.
-            # Ideally QObject shouldn't be a singleton if it has parent/thread affinity issues.
-            # However, for this scope, we'll keep the singleton pattern but ensure QObject init is called.
             cls._instance = super(VisionController, cls).__new__(cls)
             cls._instance._initialized = False
         return cls._instance
@@ -45,173 +57,192 @@ class VisionController(QObject):
     def __init__(self):
         if self._initialized:
             return
-            
-        # Initialise QObject
+
         super().__init__()
-        
-        # Initialise Camera Service with default configuration
-        # In a production system, this config might be loaded from a file
-        self.camera_service = CameraService(CameraConfig())
+
+        # Primary camera (OAK-D Lite)
+        self.camera_service = BirdseyeService(BirdseyeConfig())
+        # Secondary camera (Logitech C925e)
+        self.chip_seg_service = ChipSegService(ChipSegConfig())
+
         self.mode = VisionMode.IDLE
         self.is_running = False
         self._initialized = True
-        
-        # Callbacks for processing results
-        self.on_frame_processed: Optional[Callable] = None 
-        
-        # Thread for processing loop to avoid blocking UI
-        # For simplicity in this iteration, we might use a QTimer or just run in main thread if fast enough.
-        # But to be "Agent-Centric" and robust, we should ideally use a worker thread.
-        # Let's keep it simple first: Use a QTimer internally to poll camera service
-        # This replaces the UI timer, keeping the polling logic encapsulated here.
-        from PySide6.QtCore import QTimer
+        self.arm_bridge = None
+
+        # Dedup state
+        self._last_card_set: frozenset = frozenset()
+        self._last_chip_total: int = -1  # -1 sentinel: first result always emits
+
+        # Chip inference gate — only run YOLO when game logic requests it
+        self._chip_inference_active: bool = False
+
+        # Detectors
+        self.card_detector = CardDetector(
+            model_path='vision/models/Card_detection_large_best.pt')
+        self.chip_segmentor = ChipSegmentor(
+            model_path='vision/models/Chip_segmentation_large_best.pt')
+
+        # Primary camera timer
         self._poll_timer = QTimer()
         self._poll_timer.timeout.connect(self.process_frame)
-        # Default polling rate - can be updated via set_fps
         self._poll_timer.setInterval(1000 // self.camera_service.config.fps)
+
+        # Chip camera timer (independent, always-on)
+        self._chip_poll_timer = QTimer()
+        self._chip_poll_timer.timeout.connect(self._process_chip_frame)
+        self._chip_poll_timer.setInterval(1000 // self.chip_seg_service.config.fps)
+
+    # ------------------------------------------------------------------
+    # Properties
+    # ------------------------------------------------------------------
 
     @property
     def fps(self) -> int:
-        """
-        Returns the configured FPS of the underlying camera service.
-        This allows the UI to synchronise its update rate with the hardware capabilities.
-        """
         return self.camera_service.config.fps
-        
-    def set_fps(self, fps: int):
-        """
-        Updates the polling rate and attempts to update camera hardware FPS.
-        """
-        if fps < 1: return
-        
-        print(f"VisionController: Setting FPS to {fps}")
-        # Update internal polling timer
-        self._poll_timer.setInterval(1000 // fps)
-        
-        # Propagate to CameraService if it supports dynamic reconfiguration
-        try:
-            self.camera_service.set_fps(fps)
-        except Exception as e:
-            print(f"VisionController: failed to set camera fps: {e}")
 
-    def connect_to_game_state(self, game_state: GameState):
-        """
-        Connects the VisionController to GameState signals.
-        
-        This allows the vision system to react autonomously to game events,
-        switching modes (e.g., to read cards when the Flop is dealt) without manual intervention.
-        """
-        game_state.on_phase_change.connect(self._handle_phase_change)
-        game_state.on_card_detection_required.connect(self._handle_card_detection)
-        game_state.on_pot_change.connect(self._handle_pot_change)
-        
-    def _handle_phase_change(self, phase: GamePhase):
-        """
-        Handles game phase changes to adjust vision monitoring strategy.
-        """
-        print(f"VisionController: Phase changed to {phase.name}")
-        # Default behaviour: Hand monitoring during active play to detect gestures/bets
-        if phase in [GamePhase.PRE_FLOP, GamePhase.FLOP, GamePhase.TURN, GamePhase.RIVER]:
-             self.set_mode(VisionMode.HAND_MONITORING)
-        elif phase == GamePhase.SHOWDOWN:
-             # In showdown, we might want to read cards again or verify hands
-             pass
-
-    def _handle_card_detection(self, cards):
-        """
-        Triggered when new community cards are dealt.
-        
-        Intent: Switch to high-precision mode to identify the new cards on the board.
-        """
-        print("VisionController: Card detection required.")
-        # Switch to card reading mode temporarily
-        self.set_mode(VisionMode.CARD_READING)
-        # In a real system, we'd trigger a single-shot capture here
-        # and then revert to hand monitoring after success/timeout.
-        
-    def _handle_pot_change(self, total_pot: int):
-        """
-        Triggered when pot size changes.
-        
-        Intent: Verify chip counts if a side camera is available.
-        """
-        print(f"VisionController: Pot updated to {total_pot}. Triggering chip check.")
-        # Trigger side view chip segmentation if we had a side camera
-        # self.set_mode(VisionMode.CHIP_SEGMENTATION) 
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
 
     def start(self):
-        """Starts the camera service and the vision processing loop."""
+        """Start both cameras and processing loops."""
         if not self.is_running:
             self.camera_service.start()
+            self.chip_seg_service.start()
             self.is_running = True
             self._poll_timer.start()
-            print("VisionController started.")
+            self._chip_poll_timer.start()
+            print("VisionController started (OAK-D Lite + C925e).")
 
     def stop(self):
-        """Stops the camera service and processing loop."""
+        """Stop both cameras and processing loops."""
         if self.is_running:
             self._poll_timer.stop()
+            self._chip_poll_timer.stop()
             self.camera_service.stop()
+            self.chip_seg_service.stop()
             self.is_running = False
             print("VisionController stopped.")
 
+    # ------------------------------------------------------------------
+    # FPS control
+    # ------------------------------------------------------------------
+
+    def set_fps(self, fps: int):
+        """Update polling rate and hardware FPS for both cameras."""
+        if fps < 1:
+            return
+        print(f"VisionController: Setting FPS to {fps}")
+        self._poll_timer.setInterval(1000 // fps)
+        self._chip_poll_timer.setInterval(1000 // fps)
+        try:
+            self.camera_service.set_fps(fps)
+        except Exception as e:
+            print(f"VisionController: failed to set OAK-D fps: {e}")
+        try:
+            self.chip_seg_service.set_fps(fps)
+        except Exception as e:
+            print(f"VisionController: failed to set chip camera fps: {e}")
+
+    # ------------------------------------------------------------------
+    # Mode & connections
+    # ------------------------------------------------------------------
+
     def set_mode(self, mode: VisionMode):
-        """
-        Switches the current vision processing mode.
-        
-        This reconfiguration may involve changing camera exposure, resolution,
-        or the active neural network models in the pipeline.
-        """
         if self.mode != mode:
             print(f"Switching Vision Mode: {self.mode.name} -> {mode.name}")
             self.mode = mode
-            
-            # Logic to reconfigure pipeline or detectors
             if self.mode == VisionMode.CARD_READING:
-                 # Intent: High resolution, stable focus for OCR/Classification
-                 print("VisionController: Configuring for Card Reading (High-Res/Still)")
-            elif self.mode == VisionMode.HAND_MONITORING:
-                 # Intent: High FPS, motion blur tolerance for gesture tracking
-                 print("VisionController: Configuring for Hand Monitoring (Video Stream)")
-            elif self.mode == VisionMode.CHIP_SEGMENTATION:
-                 # Intent: Colour accuracy for chip counting
-                 print("VisionController: Configuring for Chip Segmentation (Side View)")
+                print("VisionController: Configuring for Card Reading (High-Res/Still)")
+
+    def connect_to_game_state(self, game_state: GameState):
+        """Connect VisionController to GameState signals for automatic mode switching."""
+        game_state.on_phase_change.connect(self._handle_phase_change)
+        game_state.on_card_detection_required.connect(self._handle_card_detection)
+        game_state.on_pot_change.connect(self._handle_pot_change)
+        game_state.on_player_action.connect(self._handle_player_action)
+
+    def connect_to_arm_bridge(self, bridge):
+        """Connect the vision controller to the arm ROS bridge."""
+        self.arm_bridge = bridge
+
+    def request_arm_move(self, x: float, y: float, z: float,
+                         pitch: float, roll: float, duration: float):
+        """Request the arm to move to a Cartesian pose. No-op if bridge unavailable."""
+        if self.arm_bridge and self.arm_bridge.is_available:
+            self.arm_bridge.move_pose(x, y, z, pitch, roll, duration)
+
+    # ------------------------------------------------------------------
+    # Game state handlers
+    # ------------------------------------------------------------------
+
+    def _handle_phase_change(self, phase: GamePhase):
+        print(f"VisionController: Phase changed to {phase.name}")
+        if phase == GamePhase.SHOWDOWN:
+            self._chip_inference_active = True
+        else:
+            self._chip_inference_active = False
+            self.set_mode(VisionMode.IDLE)
+
+    def _handle_card_detection(self, cards):
+        print("VisionController: Card detection required.")
+        self.set_mode(VisionMode.CARD_READING)
+
+    def _handle_pot_change(self, total_pot: int):
+        print(f"VisionController: Pot updated to {total_pot}.")
+
+    def _handle_player_action(self, action: Action):
+        """Activate chip inference after betting actions."""
+        if action.action_type in (ActionType.CALL, ActionType.BET,
+                                  ActionType.RAISE, ActionType.ALL_IN):
+            self._chip_inference_active = True
+
+    # ------------------------------------------------------------------
+    # Frame processing
+    # ------------------------------------------------------------------
 
     def get_frame(self):
-        """
-        Retrieves the latest frame from the camera service.
-        """
         return self.camera_service.get_frame()
 
     def process_frame(self):
-        """
-        Main processing loop iteration.
-        Should be called periodically (e.g., by a QTimer in the GUI or a separate thread).
-        """
+        """Primary (OAK-D) processing loop — called by _poll_timer."""
         if not self.is_running:
             return
-
         frame = self.get_frame()
         if frame is None:
             return
 
-        # Placeholder for processing logic based on self.mode
-        if self.mode == VisionMode.HAND_MONITORING:
-            # TODO: Integrate HandDetector
-            # result = self.hand_detector.process(frame)
-            pass
-            
-        elif self.mode == VisionMode.CARD_READING:
-            # TODO: Integrate CardDetector
-            pass
-            
-        elif self.mode == VisionMode.CHIP_SEGMENTATION:
-             # TODO: Integrate ChipSegmentor
-             pass
-            
-        # Emit Signal for UI
+        if self.mode == VisionMode.CARD_READING:
+            detections = self.card_detector.process(frame)
+            draw_card_detections(frame, detections)
+            current_set = frozenset(
+                (d["rank"], d["suit"]) for d in detections
+                if d["rank"] is not None and d["suit"] is not None
+            )
+            if current_set != self._last_card_set:
+                self._last_card_set = current_set
+                self.cards_detected.emit(detections)
+
         self.frame_ready.emit(frame)
-        
-        # Legacy Callback (deprecated, prefer signals)
-        if self.on_frame_processed:
-            self.on_frame_processed(frame)
+
+    def _process_chip_frame(self):
+        """Secondary (C925e) processing loop — called by _chip_poll_timer."""
+        if not self.is_running:
+            return
+        frame = self.chip_seg_service.get_frame()
+        if frame is None:
+            return
+
+        self.chip_frame_ready.emit(frame)
+
+        if not self._chip_inference_active:
+            return
+
+        result = self.chip_segmentor.process(frame)
+
+        # Only emit chips_detected when the total chip value changes
+        new_total = result["stack"].total
+        if new_total != self._last_chip_total:
+            self._last_chip_total = new_total
+            self.chips_detected.emit(result)

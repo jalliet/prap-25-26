@@ -1,10 +1,9 @@
-import cv2
 from PySide6.QtGui import QImage, QPixmap
 
+
 def convert_cv_qt(cv_img):
-    """Convert from an opencv image to QPixmap"""
-    rgb_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
-    h, w, ch = rgb_image.shape
+    """Convert a BGR opencv image to QPixmap without an intermediate copy."""
+    h, w, ch = cv_img.shape
     bytes_per_line = ch * w
-    convert_to_Qt_format = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format_RGB888)
-    return QPixmap.fromImage(convert_to_Qt_format)
+    qt_img = QImage(cv_img.data, w, h, bytes_per_line, QImage.Format_BGR888)
+    return QPixmap.fromImage(qt_img)

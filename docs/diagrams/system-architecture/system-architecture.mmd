@@ -1,0 +1,58 @@
+graph TB
+    subgraph GUI["GUI Layer (PySide6)"]
+        MW["MainWindow<br/>1200×800 QSplitter"]
+    end
+
+    subgraph Services["Services Layer"]
+        VC["VisionController<br/>Singleton · Dual QTimer polling"]
+        CS["BirdseyeService<br/>OAK-D DepthAI"]
+        CSS["ChipSegService<br/>C925e · cv2.VideoCapture"]
+        ARB["ArmRosBridge<br/>Singleton · Optional ROS 2"]
+    end
+
+    subgraph Vision["Vision System (YOLOv8)"]
+        CD["CardDetector"]
+        CHI["ChipSegmentor"]
+    end
+
+    subgraph Poker["Poker Engine"]
+        GS["GameState<br/>Phase FSM · Signals"]
+        PM["Player · Card · Chips<br/>Action · Deck"]
+    end
+
+    subgraph ROS2["ROS 2 Workspace (src/)"]
+        CTRL["PokerController<br/>LQR + IK"]
+        SB["SimBridge"]
+        DRV["scservo_driver<br/>C++ STS3215"]
+        GAZ["Gazebo<br/>SO-101 Simulation"]
+    end
+
+    VC -->|"frame_ready · cards_detected<br/>chip_frame_ready · chips_detected"| MW
+    GS -->|"phase / pot / turn<br/>signals"| MW
+    ARB -->|"connection_changed<br/>move_completed"| MW
+
+    VC --> CS
+    VC --> CSS
+    VC --> CD
+    VC --> CHI
+    VC <-.->|"auto mode switching<br/>+ event-driven inference"| GS
+    VC -.->|"request_arm_move()"| ARB
+
+    GS --> PM
+
+    ARB <-->|"topics / actions"| CTRL
+    CTRL --> SB
+    CTRL --> DRV
+    SB <--> GAZ
+
+    classDef gui fill:#4A90E2,stroke:#2B5C8A,color:#fff
+    classDef svc fill:#50C878,stroke:#2D7A47,color:#fff
+    classDef vis fill:#E8A838,stroke:#A06B1F,color:#fff
+    classDef poker fill:#C75050,stroke:#8A2D2D,color:#fff
+    classDef ros fill:#9B59B6,stroke:#6C3483,color:#fff
+
+    class MW gui
+    class VC,CS,CSS,ARB svc
+    class CD,CHI vis
+    class GS,PM poker
+    class CTRL,SB,DRV,GAZ ros

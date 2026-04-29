@@ -1,0 +1,61 @@
+flowchart TB
+    subgraph Qt["Qt Application (Host PC)"]
+        ARB["_ArmRosNode<br/>(poker_arm_bridge)"]
+    end
+
+    subgraph ROS2["ROS 2 Nodes"]
+        CTRL["PokerController<br/>(poker_controller)"]
+        SB["SimBridge<br/>(sim_bridge)"]
+        DRV["scservo_driver_node<br/>(C++)"]
+        JSB["joint_state_broadcaster"]
+        FPC["forward_position_controller"]
+        RSP["robot_state_publisher"]
+    end
+
+    subgraph Gazebo["Gazebo Simulation"]
+        GAZ["gz_sim<br/>SO-101 Model"]
+    end
+
+    %% Qt → Controller (topics)
+    ARB -->|"/target_pose (TargetPose)"| CTRL
+    ARB -->|"/target_joints (TargetJoints)"| CTRL
+
+    %% Qt ↔ Controller (actions, bidirectional)
+    ARB ===|"/move_pose (MovePose)"| CTRL
+    ARB ===|"/move_joints (MoveJoints)"| CTRL
+
+    %% Controller feedback back to Qt
+    CTRL -->|"/motor_feedback (MotorFeedback)"| ARB
+    CTRL -->|"/ik_solution (Float64MultiArray)"| ARB
+
+    %% Controller → Hardware path
+    CTRL -->|"/servo_cmd (ServoCommand)"| DRV
+    DRV -->|"/motor_feedback (MotorFeedback)"| CTRL
+
+    %% Controller → SimBridge (servo commands forwarded)
+    CTRL -->|"/servo_cmd"| SB
+
+    %% SimBridge → Gazebo controller → Gazebo physics
+    SB -->|"/forward_position_controller/commands<br/>(Float64MultiArray)"| FPC
+    FPC -->|"joint position commands"| GAZ
+
+    %% Gazebo → JSB → /joint_states → SimBridge
+    GAZ -->|"joint states"| JSB
+    JSB -->|"/joint_states (JointState)"| SB
+
+    %% SimBridge → fake motor feedback (sim mode)
+    SB -->|"/motor_feedback (simulated)"| CTRL
+
+    %% Controller publishes its own /joint_states → RSP
+    CTRL -->|"/joint_states (JointState)"| RSP
+
+    %% RSP publishes TF and robot_description
+    RSP -->|"/tf + /robot_description"| GAZ
+
+    classDef qt fill:#4A90E2,stroke:#2B5C8A,color:#fff
+    classDef ros fill:#50C878,stroke:#2D7A47,color:#fff
+    classDef sim fill:#9B59B6,stroke:#6C3483,color:#fff
+
+    class ARB qt
+    class CTRL,SB,DRV,JSB,FPC,RSP ros
+    class GAZ sim
