@@ -15,35 +15,36 @@ from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray
 from ament_index_python.packages import get_package_share_directory
 
+
 class PokerController(Node):
     def __init__(self):
         super().__init__('poker_controller')
-        
+
         # --- Robot Configuration ---
         self.n_joints = 6
-        self.SERVO_ZERO = [2048, 2048, 479, 1873, 2048, 2048]
-        self.SERVO_SIGNS = [1] * self.n_joints                                                                            
+        self.SERVO_ZERO = [1852, 1948, 501, 1849, 2050, 2015]
+        self.SERVO_SIGNS = [1] * self.n_joints
         self.STEPS_PER_RAD = 4096.0 / (2.0 * np.pi)
-        self.MAX_RPM = 50.0 
-        self.Q_MAX_STEPS = (self.MAX_RPM * 4096.0) / 60.0 
-        self.Q_MIN_STEPS = 50.0 
-        
+        self.MAX_RPM = 50.0
+        self.Q_MAX_STEPS = (self.MAX_RPM * 4096.0) / 60.0
+        self.Q_MIN_STEPS = 50.0
+
         # --- Matrix LQR Design ---
         self.Ts = 0.01
         q_diag = [5.0] * self.n_joints
         r_diag = [10.0] * self.n_joints
         self.Q_mat = np.diag(q_diag)
         self.R_mat = np.diag(r_diag)
-        
+
         q_diag_sqrt = np.sqrt(q_diag)
         Q_sqrt = np.diag(q_diag_sqrt)
         Q_inv_sqrt = np.diag(1.0 / q_diag_sqrt)
         I = np.eye(self.n_joints)
-        
+
         R_term = Q_inv_sqrt @ self.R_mat @ Q_inv_sqrt
         inner_root = np.sqrt(I + (4.0 / self.Ts**2) * R_term)
         self.P_mat = 0.5 * Q_sqrt @ (I + inner_root) @ Q_sqrt
-        
+
         inv_term = np.linalg.inv(self.R_mat + (self.Ts**2) * self.P_mat)
         self.K_mat = self.Ts * inv_term @ self.P_mat
 
@@ -52,7 +53,8 @@ class PokerController(Node):
         try:
             pkg_dir = get_package_share_directory('poker_control')
             model_dir = os.path.join(pkg_dir, 'models')
-            self.ik_func = ca.Function.load(os.path.join(model_dir, 'inverse_kinematics.casadi'))
+            self.ik_func = ca.Function.load(os.path.join(
+                model_dir, 'inverse_kinematics.casadi'))
         except Exception as e:
             self.get_logger().error(f"Failed to load Kinematics: {e}")
 
@@ -60,16 +62,16 @@ class PokerController(Node):
         self.q_current_internal = np.zeros(self.n_joints)
         self.q_measured = np.zeros(self.n_joints)
         self.has_feedback = False
-        
-        self.q_ref_traj = [] 
+
+        self.q_ref_traj = []
         self.v_ref_traj = []
         self.traj_index = 0
         self.tracking_active = False
         self.goal_reached_logged = False
-        
+
         self.current_q_target = None
         self.current_duration = 0.0
-        
+
         # Tracking variables for Action Feedback
         self.last_error = 0.0
         self.last_elapsed = 0.0
@@ -77,16 +79,16 @@ class PokerController(Node):
         # --- Interfaces ---
         self.sub_feedback = self.create_subscription(
             MotorFeedback, '/motor_feedback', self.feedback_callback, 10)
-        
+
         self.pub_cmd = self.create_publisher(
             ServoCommand, '/servo_cmd', 10)
-        
+
         self.pub_joint_states = self.create_publisher(
             JointState, '/joint_states', 10)
-        
+
         self.pub_ik_solution = self.create_publisher(
             Float64MultiArray, '/ik_solution', 10)
-        
+
         self.joint_names = ['1', '2', '3', '4', '5', '6']
 
         # --- ACTION SERVERS ---
@@ -124,27 +126,27 @@ class PokerController(Node):
         """Handles the MoveJoints action lifecycle."""
         req = goal_handle.request
         q_target = np.array(req.joints)
-        
+
         self.get_logger().info("Executing MoveJoints Action...")
         self.plan_move(q_target, req.duration)
-        
+
         feedback_msg = MoveJoints.Feedback()
-        
+
         # Loop while the controller tracks the trajectory
         while self.tracking_active:
             if goal_handle.is_cancel_requested:
                 goal_handle.canceled()
-                self.tracking_active = False # Stops the controller
+                self.tracking_active = False  # Stops the controller
                 self.get_logger().info('MoveJoints Goal Canceled.')
                 return MoveJoints.Result(success=False, final_error=self.last_error)
-            
+
             # Send live feedback to the client
             feedback_msg.current_error = self.last_error
             feedback_msg.elapsed_time = self.last_elapsed
             goal_handle.publish_feedback(feedback_msg)
-            
+
             time.sleep(0.05)
-            
+
         goal_handle.succeed()
         result = MoveJoints.Result(success=True, final_error=self.last_error)
         return result
@@ -152,7 +154,7 @@ class PokerController(Node):
     def execute_pose_callback(self, goal_handle):
         """Handles the MovePose action lifecycle, including IK."""
         req = goal_handle.request
-        
+
         if self.ik_func is None:
             self.get_logger().error("IK Function not loaded. Aborting action.")
             goal_handle.abort()
@@ -162,31 +164,31 @@ class PokerController(Node):
             target_vec = [req.x, req.y, req.z, req.pitch, req.roll]
             res = self.ik_func(target_vec)
             q_target = np.array(res).flatten()
-            
+
             ik_msg = Float64MultiArray()
             ik_msg.data = q_target.tolist()
             self.pub_ik_solution.publish(ik_msg)
-            
+
             self.get_logger().info("Executing MovePose Action (IK Solved)...")
             self.plan_move(q_target, req.duration)
-            
+
             feedback_msg = MovePose.Feedback()
-            
+
             while self.tracking_active:
                 if goal_handle.is_cancel_requested:
                     goal_handle.canceled()
                     self.tracking_active = False
                     return MovePose.Result(success=False, final_error=self.last_error)
-                
+
                 feedback_msg.current_error = self.last_error
                 feedback_msg.elapsed_time = self.last_elapsed
                 goal_handle.publish_feedback(feedback_msg)
-                
+
                 time.sleep(0.05)
-                
+
             goal_handle.succeed()
             return MovePose.Result(success=True, final_error=self.last_error)
-            
+
         except Exception as e:
             self.get_logger().error(f"IK Planning Failed: {e}")
             goal_handle.abort()
@@ -194,13 +196,16 @@ class PokerController(Node):
 
     # --- CORE CONTROLLER LOGIC ---
     def feedback_callback(self, msg):
-        if len(msg.positions) < self.n_joints: return
+        if len(msg.positions) < self.n_joints:
+            return
         for i in range(self.n_joints):
             steps = msg.positions[i]
-            if steps == -1: continue
+            if steps == -1:
+                continue
             diff = steps - self.SERVO_ZERO[i]
-            self.q_measured[i] = diff / (self.STEPS_PER_RAD * self.SERVO_SIGNS[i])
-        
+            self.q_measured[i] = diff / \
+                (self.STEPS_PER_RAD * self.SERVO_SIGNS[i])
+
         self.has_feedback = True
 
         if self.tracking_active and self.current_q_target is not None:
@@ -217,28 +222,29 @@ class PokerController(Node):
         self.traj_index = 0
         self.tracking_active = True
         self.goal_reached_logged = False
-        
+
         if not self.has_feedback:
             self.update_control(q_target, duration)
 
     def generate_trajectory(self, q_start, q_end, duration):
         steps = int(duration / self.Ts)
-        if steps <= 0: steps = 1
+        if steps <= 0:
+            steps = 1
         t_vec = np.linspace(0, duration, steps)
-        
+
         self.q_ref_traj = [np.zeros(self.n_joints) for _ in range(steps)]
         self.v_ref_traj = [np.zeros(self.n_joints) for _ in range(steps)]
-        
+
         for j in range(self.n_joints):
             s, e = q_start[j], q_end[j]
             a0 = s
             a3 = 10 * (e - s) / (duration**3)
             a4 = -15 * (e - s) / (duration**4)
             a5 = 6 * (e - s) / (duration**5)
-            
+
             q_j = a0 + a3*(t_vec**3) + a4*(t_vec**4) + a5*(t_vec**5)
             v_j = 3*a3*(t_vec**2) + 4*a4*(t_vec**3) + 5*a5*(t_vec**4)
-            
+
             for k in range(steps):
                 self.q_ref_traj[k][j] = q_j[k]
                 self.v_ref_traj[k][j] = v_j[k]
@@ -246,7 +252,8 @@ class PokerController(Node):
     def rad_to_servo(self, q_rad_array):
         cmd_steps = []
         for i in range(self.n_joints):
-            steps = self.SERVO_ZERO[i] + (q_rad_array[i] * self.STEPS_PER_RAD * self.SERVO_SIGNS[i])
+            steps = self.SERVO_ZERO[i] + (q_rad_array[i]
+                                          * self.STEPS_PER_RAD * self.SERVO_SIGNS[i])
             steps = max(0, min(4095, int(steps)))
             cmd_steps.append(steps)
         return cmd_steps
@@ -254,61 +261,66 @@ class PokerController(Node):
     def update_control(self, q_target, duration):
         if not self.tracking_active:
             return
-        
+
         now = self.get_clock().now()
         elapsed = (now - self.start_time).nanoseconds / 1e9
-        
+
         self.traj_index = int(elapsed / self.Ts)
 
         if self.traj_index >= len(self.q_ref_traj):
             self.traj_index = len(self.q_ref_traj) - 1
-            
+
         q_des = self.q_ref_traj[self.traj_index]
         v_des = self.v_ref_traj[self.traj_index]
-        
+
         if self.traj_index + 1 < len(self.q_ref_traj):
             q_des_next = self.q_ref_traj[self.traj_index + 1]
         else:
             q_des_next = q_des
-        
+
         max_pos_error = np.max(np.abs(q_target - self.q_measured))
-        
+
         # Save state for the Action Server Feedback
         self.last_error = float(max_pos_error)
         self.last_elapsed = float(elapsed)
-        
+
         error_threshold = 0.05
 
         if self.traj_index == len(self.q_ref_traj) - 1:
             if not self.goal_reached_logged:
                 if (max_pos_error <= error_threshold):
-                    self.get_logger().info(f"✅ GOAL REACHED (Actual time: {elapsed:.2f}s, Final error: {max_pos_error:.3f} rad)")
+                    self.get_logger().info(
+                        f"✅ GOAL REACHED (Actual time: {elapsed:.2f}s, Final error: {max_pos_error:.3f} rad)")
                     self.goal_reached_logged = True
                     self.tracking_active = False
                 elif elapsed >= (duration + 10):
-                    self.get_logger().warn(f"Goal timeout! Final error: {max_pos_error:.3f} rad")
+                    self.get_logger().warn(
+                        f"Goal timeout! Final error: {max_pos_error:.3f} rad")
                     self.goal_reached_logged = True
                     self.tracking_active = False
 
         if self.has_feedback:
             e = self.q_measured - q_des
         else:
-            e = np.zeros(6) 
+            e = np.zeros(6)
 
         # Calculate Control Effort
         K_e = self.K_mat @ e
-        
+
         # Calculate Speed Limits
-        u_tilde = v_des - K_e 
+        #  - K_e
+        u_tilde = v_des
         cmd_speed = []
         for j in range(self.n_joints):
             u_steps_s = abs(u_tilde[j] * self.STEPS_PER_RAD)
-            limit = min(self.Q_MAX_STEPS, max(self.Q_MIN_STEPS, 1.5 * u_steps_s))
+            limit = min(self.Q_MAX_STEPS, max(
+                self.Q_MIN_STEPS, 1.5 * u_steps_s))
             cmd_speed.append(int(limit))
 
         # Calculate Position Command (Hybrid LQR)
         correction = e - (self.Ts * K_e)
-        q_cmd_rad = q_des_next + 0.1*correction
+        #  + 0.1*correction
+        q_cmd_rad = q_des_next
         cmd_pos = self.rad_to_servo(q_cmd_rad)
         cmd_acc = [4000] * 6
 
@@ -329,13 +341,19 @@ class PokerController(Node):
         if self.traj_index < len(self.q_ref_traj):
             self.q_current_internal = q_des
 
+
 def main(args=None):
     rclpy.init(args=args)
+    # Brief pause to allow DDS to deregister any stale endpoints from a previous
+    # session before this node's action servers are advertised. Without this,
+    # relaunching quickly can leave ghost servers visible to clients, causing
+    # the "unexpected goal response" warning in the action client.
+    time.sleep(1.0)
     node = PokerController()
-    
+
     executor = MultiThreadedExecutor()
     executor.add_node(node)
-    
+
     try:
         executor.spin()
     except KeyboardInterrupt:
@@ -344,6 +362,7 @@ def main(args=None):
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()

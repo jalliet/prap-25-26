@@ -25,10 +25,16 @@ The system leverages **CasADi** for high-performance symbolic kinematics (FK, IK
 NB: Using this package with WSL2 can cause problems when interfacing with the robot, as it is difficult to give it access to the ports.
 
 ### Critical ROS Dependencies
-While `rosdep` handles most packages, you must explicitly install the python3, simulation bridges, and GUI tools:
+While `rosdep` handles most packages, you must explicitly install the simulation bridges and GUI tools.
+
+**ROS 2 Humble:**
 ```bash
 sudo apt install python3-pip ros-humble-ign-ros2-control ros-humble-ros2-controllers ros-humble-joint-state-publisher-gui
+```
 
+**ROS 2 Jazzy:**
+```bash
+sudo apt install python3-pip ros-jazzy-gz-ros2-control ros-jazzy-ros2-controllers ros-jazzy-joint-state-publisher-gui
 ```
 
 ---
@@ -42,7 +48,6 @@ Create a standard ROS 2 workspace:
 ```bash
 mkdir -p ~/poker_arm_ws/src
 cd ~/poker_arm_ws/src
-
 ```
 
 ### 2. Clone the Repository
@@ -51,7 +56,6 @@ Clone the repository into the workspace source folder:
 
 ```bash
 git clone <YOUR_REPO_URL_HERE> .
-
 ```
 
 ### 3. Install System Dependencies (rosdep)
@@ -61,89 +65,59 @@ Install required ROS 2 dependencies such as `xacro`, `joint_state_publisher`, et
 ```bash
 cd ~/poker_arm_ws
 sudo apt update
-sudo apt install python3-rosdep
+sudo apt install python3-rosdep python3-venv libxcb-cursor0
 sudo rosdep init
 rosdep update
 rosdep install --from-paths src --ignore-src -r -y
-
 ```
-### 4. Create Virtual Environment
 
-To prevent python version and permission issues, it is best to build the workspace from a virtual environment.
+### 4. Create Virtual Environment and Install Python Dependencies
+
+ROS 2 entry points run with the system Python, so this project uses a build script (`build.sh`) that patches the generated entry points to use the workspace venv after every build. This keeps all Python dependencies (e.g. CasADi) isolated without polluting the system Python.
+
+Create the venv and install dependencies:
 
 ```bash
 cd ~/poker_arm_ws
 python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-Then, we activate the virtual environment. This must be called *every* time, or can be added to the bash.
+Activate the venv every time you open a new terminal before running any `ros2` commands:
 ```bash
-./.venv/Scripts/activate
-export PYTHONPATH=~/poker_arm_ws/venv/lib/<PYTHON_VERSION>/site-packages:$PYTHONPATH
-```
-NB: replace <PYTHON_VERSION> with your actual python version. Here, we use 3.12.
-
-
-### 5. Install Python Dependencies
-
-The kinematic solver relies on specific Python libraries.
-
-```bash
-cd ~/poker_arm_ws
-pip3 install -r requirements.txt
-
+source ~/poker_arm_ws/.venv/bin/activate
 ```
 
-### 6. Build the Workspace
+> **Tip:** Add both lines to your `~/.bashrc` so they run automatically:
+> ```bash
+> source ~/poker_arm_ws/.venv/bin/activate
+> source ~/poker_arm_ws/install/setup.bash
+> ```
 
-Build the packages using `colcon`:
+### 5. Build the Workspace
+
+Use the provided `build.sh` script instead of calling `colcon` directly. It runs `colcon build --symlink-install` and then patches the Python entry points to use the venv interpreter — necessary because `colcon` always generates entry points with the system Python shebang.
 
 ```bash
 cd ~/poker_arm_ws
-colcon build --symlink-install
-
+./build.sh
 ```
 
-### 7. Source the Environment
+You can pass any `colcon` flags through it:
+```bash
+./build.sh --packages-select poker_control
+```
 
-Source the workspace overlay:
+### 6. Source the Environment
 
 ```bash
 source install/setup.bash
-
 ```
-
-> **Tip:** Add the following line to your `~/.bashrc` for convenience:
-> ```bash
-> source ~/poker_arm_ws/install/setup.bash
-> ~/poker_arm_ws/.venv/Scripts/activate
-> ```
 
 ### 7. Configure USB Latency (Critical for Hardware)
 
-The LQR controller requires a strict **100 Hz (10ms)** loop rate. Standard Linux USB drivers buffer data for **16ms** by default, which physically prevents the loop from running faster than ~60 Hz.
-
-You **must** set the latency timer to **1ms** for the robot's serial port.
-
-**Temporary Fix (Resets on Reboot/Re-plug):**
-```bash
-# Replace ttyACM0 with your specific port
-echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyACM0/latency_timer
-
-```
-
-**Permanent Fix (Recommended):**
-Create a udev rule to apply this automatically:
-
-```bash
-echo 'ACTION=="add", SUBSYSTEM=="usb-serial", ATTR{latency_timer}="1"' | sudo tee /etc/udev/rules.d/99-low-latency.rules
-sudo udevadm control --reload-rules && sudo udevadm trigger
-
-```
-
-> **WSL2 Note:** If you are using WSL2, these commands must be run **inside the WSL terminal**, not in Windows.
-
----
+The LQR controller requires a strict **100 Hz (10ms)** loop rate.
 
 ## Quick Start
 
@@ -154,7 +128,6 @@ This script solves the DH parameters and compiles the functions used by the cont
 
 ```bash
 ros2 run poker_control generate_kinematics
-
 ```
 
 ### Step 2: Verify Kinematics
@@ -163,7 +136,6 @@ Once models are generated, run the test script to validate the forward and inver
 
 ```bash
 ros2 run poker_control test_kinematics
-
 ```
 
 ### Step 3: Launch the System
@@ -173,36 +145,7 @@ Bring up the full robot stack (description, controller, and dashboard).
 
 ```bash
 ros2 launch poker_bringup poker_arm.launch.py mode:=sim
-
 ```
-> **Note:** If you encounter the following error while using WSL:
->
-> ```bash
-> [dashboard-5]   File "<PATH_TO_SRC>/src/build/poker_dashboard/poker_dashboard/dashboard_node.py", line 5, in <module>
-> [dashboard-5]     from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
-> [dashboard-5]     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-> [dashboard-5] ModuleNotFoundError: No module named 'PySide6'
-> ```
->
-> This usually means the node is being run with the system Python instead of your virtual environment.
->
-> As a quick fix, update the shebang line in:
->
-> ```
-> <PATH_TO_SRC>/src/install/poker_dashboard/lib/poker_dashboard/dashboard
-> ```
->
-> Change:
->
-> ```bash
-> #!/usr/bin/python3
-> ```
->
-> to:
->
-> ```bash
-> #!<VENV_PATH>/bin/python3
-> ```
 
 ### Step 4: Visual Tuning (Optional)
 
@@ -210,7 +153,6 @@ To check the URDF zero-pose or debug geometry without running the full physics e
 
 ```bash
 ros2 launch lerobot_description so101_display.launch.py
-
 ```
 
 ---
@@ -242,7 +184,6 @@ Runs the full stack on a PC connected to the robot.
 
 ```bash
 ros2 launch poker_bringup poker_arm.launch.py mode:=pc_hardware port:=/dev/ttyACM0
-
 ```
 
 ---
@@ -250,13 +191,12 @@ ros2 launch poker_bringup poker_arm.launch.py mode:=pc_hardware port:=/dev/ttyAC
 #### 2. Simulation
 
 Runs the stack in software-only mode.
-The hardware driver is replaced by a simulation bridge (Ignition Gazebo).
+The hardware driver is replaced by a simulation bridge (Gazebo).
 
 * **Nodes:** Controller, Sim Bridge, Dashboard
 
 ```bash
 ros2 launch poker_bringup poker_arm.launch.py mode:=sim
-
 ```
 
 ---
@@ -269,7 +209,6 @@ Optimised for embedded systems (e.g. Raspberry Pi) without a display.
 
 ```bash
 ros2 launch poker_bringup poker_arm.launch.py mode:=pi_hardware_headless
-
 ```
 
 ---
@@ -282,7 +221,6 @@ Same as PC hardware mode, explicitly labelled for embedded use.
 
 ```bash
 ros2 launch poker_bringup poker_arm.launch.py mode:=pi_hardware
-
 ```
 
 ---
@@ -319,14 +257,16 @@ Symbolic kinematics generator.
 
 ## Troubleshooting
 
-### `ModuleNotFoundError`
+### `ModuleNotFoundError` for `casadi`, `PySide6`, or other venv packages
 
-Ensure Python dependencies are installed:
+This means the entry point was built with the system Python shebang. Always use `./build.sh` instead of `colcon build` — it patches the shebangs automatically after every build.
+
+If you already built with `colcon build`, just run `./build.sh` once to fix it:
 
 ```bash
-cd ~/poker_arm_ws/src/poker_control
-pip3 install -r requirements.txt
-
+cd ~/poker_arm_ws
+./build.sh
+source install/setup.bash
 ```
 
 ---
@@ -338,21 +278,27 @@ Make sure rosdep has been initialised:
 ```bash
 sudo rosdep init
 rosdep update
-
 ```
 
 ---
 
 ### Serial Permission Denied
 
-If hardware mode fails to open the serial port:
+**Quick fix (current session only):** Grant access to the port immediately without logging out:
+
+```bash
+sudo chmod 666 /dev/ttyACM0
+```
+
+This resets on reboot or when the device is unplugged. You'll need to re-run it each session.
+
+**Permanent fix:** Add your user to the `dialout` group so the device is always accessible:
 
 ```bash
 sudo usermod -a -G dialout $USER
-
 ```
 
-Log out and log back in for changes to take effect.
+Log out and log back in for the group change to take effect. After that, `chmod` is no longer needed.
 
 ---
 
@@ -362,10 +308,29 @@ If you modify DH parameters, delete old models and regenerate:
 
 ```bash
 rm -rf install/poker_control/share/poker_control/models/*.casadi
-colcon build --symlink-install
+./build.sh
 source install/setup.bash
 ros2 run poker_control generate_kinematics
+```
 
+---
+
+### Gazebo Hangs on Launch — `ros_gz_sim` Loops "Requesting list of world names"
+
+**Symptom:** Gazebo opens a window but the simulation never loads. The terminal repeatedly prints `[ros_gz_sim]: Requesting list of world names.` and the controller spawners time out.
+
+**Cause:** Gazebo Harmonic (shipped with ROS 2 Jazzy) defaults to the Ogre2 renderer, which requires OpenGL 4.3+. On machines without a dedicated GPU — integrated Intel/AMD graphics, VMs, WSL2 — Ogre2 stalls silently during initialisation, blocking the server from ever starting. This is a known Gazebo upstream compatibility issue, not a misconfiguration.
+
+**Fix:** This project's launch file already applies `--render-engine ogre` (Ogre1, requires only OpenGL 2.1) and sets `GZ_IP=127.0.0.1` (pins gz-transport to loopback). No action needed — the launch file handles it automatically.
+
+If you have forked or modified the launch files and see this issue, add these two lines to `so101_gazebo.launch.py`:
+
+```python
+SetEnvironmentVariable(name="GZ_IP", value="127.0.0.1")
+```
+
+```python
+("gz_args", [" -v 4 -r empty.sdf --render-engine ogre"])
 ```
 
 ---
