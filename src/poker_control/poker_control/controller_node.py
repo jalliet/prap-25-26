@@ -292,7 +292,7 @@ class PokerController(Node):
         self.last_error = float(max_pos_error)
         self.last_elapsed = float(elapsed)
 
-        error_threshold = 0.05
+        error_threshold = 0.09  # ~5 degrees in radians
 
         if self.traj_index == len(self.q_ref_traj) - 1:
             if not self.goal_reached_logged:
