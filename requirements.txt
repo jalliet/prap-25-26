@@ -17,3 +17,4 @@ setuptools
 empy
 lark
 six
+phevaluator
