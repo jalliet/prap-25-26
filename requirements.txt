@@ -18,3 +18,4 @@ empy
 lark
 six
 phevaluator
+paramiko

@@ -39,3 +39,6 @@ debug_robot.urdf
 # Docs
 docs/diagrams/output/**/*.png
 docs/plans/
+
+# Local secrets
+.env*
