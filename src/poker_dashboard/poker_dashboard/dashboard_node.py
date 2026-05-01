@@ -2,6 +2,7 @@ import sys
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
+from rclpy.executors import SingleThreadedExecutor
 from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
                                QLabel, QDoubleSpinBox, QPushButton, QTabWidget, 
                                QSlider)
@@ -80,8 +81,12 @@ class DashboardWidget(QWidget):
         main_layout.addWidget(self.lbl_status)
 
         self.setLayout(main_layout)
-        
-        # Timer
+
+        # Persistent executor — avoids the add/remove cycle that spin_once
+        # does on every call, which causes duplicate action callback registrations.
+        self._executor = SingleThreadedExecutor()
+        self._executor.add_node(ros_node)
+
         self.timer = QTimer()
         self.timer.timeout.connect(self.spin_ros)
         self.timer.start(10)
@@ -182,15 +187,15 @@ class DashboardWidget(QWidget):
             self.timer.stop()
             self.close()
             return
-        
+
         try:
-            rclpy.spin_once(self.node, timeout_sec=0)
-            
+            self._executor.spin_once(timeout_sec=0)
+
             # Update IK Display
             if self.node.latest_ik is not None:
                 ik_str = ", ".join([f"{x:.2f}" for x in self.node.latest_ik])
                 self.lbl_ik_result.setText(f"Calculated IK:\n[{ik_str}]")
-                
+
         except KeyboardInterrupt:
             self.close()
         except Exception:
@@ -198,6 +203,7 @@ class DashboardWidget(QWidget):
 
     def closeEvent(self, event):
         self.timer.stop()
+        self._executor.remove_node(self.node)
         event.accept()
 
 def main():

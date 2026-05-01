@@ -9,6 +9,7 @@ from PySide6.QtSvgWidgets import QSvgWidget
 from gui.utils import convert_cv_qt
 from services.vision_controller import VisionController, VisionMode
 from services.arm_ros_bridge import ArmRosBridge
+from services.arm_choreographer import ArmChoreographer
 from poker.game_state import GameState, GamePhase
 from poker.player import Player
 from vision.draw_utils import draw_card_detections
@@ -73,6 +74,13 @@ class MainWindow(QMainWindow):
         self.vision_controller.connect_to_arm_bridge(self.arm_bridge)
         self.arm_bridge.connection_changed.connect(self._on_arm_connection_changed)
         self.arm_bridge.move_completed.connect(self._on_arm_move_completed)
+
+        # Choreographer owns multi-step sequences (deal, flip, collect_pot,
+        # home, pick_up_deck). XY positions are populated at runtime by the
+        # CV pipeline through ``self.choreographer.table_map``.
+        self.choreographer = ArmChoreographer(self.arm_bridge, parent=self)
+        self.choreographer.sequence_finished.connect(
+            self._on_choreographer_sequence_finished)
         
         # Simulation process handle (set when user starts the sim)
         self.sim_process = None
@@ -485,6 +493,11 @@ class MainWindow(QMainWindow):
             self.log_message(f"Arm move complete (error: {final_error:.3f} rad)")
         else:
             self.log_message(f"Arm move failed (error: {final_error:.3f})")
+
+    def _on_choreographer_sequence_finished(self, name: str, success: bool):
+        """Log the terminal status of a multi-step arm sequence."""
+        status = "OK" if success else "FAILED"
+        self.log_message(f"Sequence '{name}': {status}")
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_B:

@@ -13,9 +13,11 @@ import numpy as np
 class TestArmRosBridgeWithoutRos(unittest.TestCase):
     """Verify graceful degradation when rclpy is not installed."""
 
-    def test_bridge_no_ros_available(self):
-        """Bridge should create successfully and report unavailable when rclpy missing."""
-        # Patch rclpy as missing at module level
+    def _load_bridge_module(self):
+        """Re-import services.arm_ros_bridge with rclpy/poker_interfaces masked.
+
+        Returns the freshly-loaded ``ArmRosBridge`` class.
+        """
         blocked_modules = {
             'rclpy': None,
             'rclpy.node': None,
@@ -24,25 +26,61 @@ class TestArmRosBridgeWithoutRos(unittest.TestCase):
             'poker_interfaces.msg': None,
             'poker_interfaces.action': None,
         }
-        with patch.dict('sys.modules', blocked_modules):
-            # Force re-import to pick up the mocked imports
-            if 'services.arm_ros_bridge' in sys.modules:
-                del sys.modules['services.arm_ros_bridge']
+        # patch.dict alone is not enough — we need to nuke the cached module so
+        # the conditional import block re-evaluates with the masked modules.
+        if 'services.arm_ros_bridge' in sys.modules:
+            del sys.modules['services.arm_ros_bridge']
+        return blocked_modules
 
+    def test_bridge_no_ros_available(self):
+        """Bridge creates successfully and reports unavailable when rclpy missing."""
+        with patch.dict('sys.modules', self._load_bridge_module()):
             from services.arm_ros_bridge import ArmRosBridge
-            # Reset singleton for test isolation
             ArmRosBridge._instance = None
 
             bridge = ArmRosBridge()
             self.assertFalse(bridge.is_available)
 
-            # These should not raise
-            bridge.publish_pose_proposal(0.3, 0.0, 0.2, 0.0, 0.0, 5.0)
-            bridge.publish_joint_proposal([0.0] * 6, 5.0)
+            # The supported action API must be safe to call even with no ROS.
+            # ``move_completed`` will emit (False, -1.0) but should not raise.
+            bridge.move_pose(0.3, 0.0, 0.2, 0.0, 0.0, 5.0)
+            bridge.move_joints([0.0] * 6, 5.0)
             bridge.shutdown()
 
-            # Clean up singleton
             ArmRosBridge._instance = None
+
+    def test_validate_pose_rejects_bad_input(self):
+        """Validation helpers reject obvious garbage even with no ROS."""
+        with patch.dict('sys.modules', self._load_bridge_module()):
+            from services.arm_ros_bridge import ArmRosBridge
+
+            # Non-positive duration
+            self.assertIsNotNone(
+                ArmRosBridge._validate_pose(0.1, 0.0, 0.1, 0.0, 0.0, 0.0))
+            # Out-of-workspace reach
+            self.assertIsNotNone(
+                ArmRosBridge._validate_pose(2.0, 2.0, 2.0, 0.0, 0.0, 1.0))
+            # Tilt > pi
+            self.assertIsNotNone(
+                ArmRosBridge._validate_pose(0.1, 0.0, 0.1, 5.0, 0.0, 1.0))
+            # Plausible pose
+            self.assertIsNone(
+                ArmRosBridge._validate_pose(0.2, 0.0, 0.1, 0.0, 0.0, 1.5))
+
+    def test_validate_joints_rejects_bad_input(self):
+        """Joint vector validation rejects wrong length / non-positive duration."""
+        with patch.dict('sys.modules', self._load_bridge_module()):
+            from services.arm_ros_bridge import ArmRosBridge
+
+            # Wrong length
+            self.assertIsNotNone(
+                ArmRosBridge._validate_joints([0.0] * 5, 1.0))
+            # Non-positive duration
+            self.assertIsNotNone(
+                ArmRosBridge._validate_joints([0.0] * 6, 0.0))
+            # Plausible
+            self.assertIsNone(
+                ArmRosBridge._validate_joints([0.0] * 6, 1.5))
 
 
 class TestCardDetector(unittest.TestCase):

@@ -172,3 +172,93 @@ Requires `npx` (Node.js). Output goes to `docs/diagrams/output/`.
 | Red    | 1     |
 | Blue   | 5     |
 | White  | 20    |
+
+---
+
+## Troubleshooting
+
+### `ModuleNotFoundError` for `casadi`, `PySide6`, or other venv packages
+
+This means the entry point was built with the system Python shebang. Always use `./build.sh` instead of `colcon build` — it patches the shebangs automatically after every build.
+
+If you already built with `colcon build`, just run `./build.sh` once to fix it:
+
+```bash
+cd ~/poker_arm_ws
+./build.sh
+source install/setup.bash
+```
+
+---
+
+### rosdep Errors
+
+Make sure rosdep has been initialised:
+
+```bash
+sudo rosdep init
+rosdep update
+```
+
+---
+
+### Serial Permission Denied
+
+**Quick fix (current session only):** Grant access to the port immediately without logging out:
+
+```bash
+sudo chmod 666 /dev/ttyACM0
+```
+
+This resets on reboot or when the device is unplugged. You'll need to re-run it each session.
+
+**Permanent fix:** Add your user to the `dialout` group so the device is always accessible:
+
+```bash
+sudo usermod -a -G dialout $USER
+```
+
+Log out and log back in for the group change to take effect. After that, `chmod` is no longer needed.
+
+---
+
+### Regenerating Models
+
+If you modify DH parameters, delete old models and regenerate:
+
+```bash
+rm -rf install/poker_control/share/poker_control/models/*.casadi
+./build.sh
+source install/setup.bash
+ros2 run poker_control generate_kinematics
+```
+
+---
+
+### Gazebo Hangs on Launch — `ros_gz_sim` Loops "Requesting list of world names"
+
+**Symptom:** Gazebo opens a window but the simulation never loads. The terminal repeatedly prints `[ros_gz_sim]: Requesting list of world names.` and the controller spawners time out.
+
+**Cause:** Gazebo Harmonic (shipped with ROS 2 Jazzy) defaults to the Ogre2 renderer, which requires OpenGL 4.3+. On machines without a dedicated GPU — integrated Intel/AMD graphics, VMs, WSL2 — Ogre2 stalls silently during initialisation, blocking the server from ever starting. This is a known Gazebo upstream compatibility issue, not a misconfiguration.
+
+**Fix:** This project's launch file already applies `--render-engine ogre` (Ogre1, requires only OpenGL 2.1) and sets `GZ_IP=127.0.0.1` (pins gz-transport to loopback). No action needed — the launch file handles it automatically.
+
+If you have forked or modified the launch files and see this issue, add these two lines to `so101_gazebo.launch.py`:
+
+```python
+SetEnvironmentVariable(name="GZ_IP", value="127.0.0.1")
+```
+
+```python
+("gz_args", [" -v 4 -r empty.sdf --render-engine ogre"])
+```
+
+---
+
+### Gazebo Crashes on Launch (WSL2)
+If Gazebo crashes immediately with an `Ogre::UnimplementedException` or `GL3PlusTextureGpu` error, it is due to WSL2's virtual graphics driver not supporting the required OpenGL features.
+
+Force software rendering before launching:
+```bash
+export LIBGL_ALWAYS_SOFTWARE=1
+```

@@ -7,18 +7,26 @@ application continues to function for camera and poker logic only.
 """
 from __future__ import annotations
 import logging
+import math
 from typing import Optional, Callable
 
 from PySide6.QtCore import QObject, Signal, QTimer
 
 logger = logging.getLogger(__name__)
 
+# --- Validation constants (cheap safety nets for the arm action API) ---
+N_JOINTS: int = 6                 # SO-101 is a 6-DOF arm
+MAX_REACH_M: float = 0.6          # generous outer bound (true reach ~0.4 m)
+# > this and the caller probably sent degrees
+MAX_JOINT_RAD: float = 2.0 * math.pi
+MAX_TILT_RAD: float = math.pi     # |pitch|, |roll| > π is almost certainly wrong
+
 # Conditional ROS 2 imports
 try:
     import rclpy
     from rclpy.node import Node
     from rclpy.action import ActionClient
-    from poker_interfaces.msg import TargetPose, TargetJoints, MotorFeedback
+    from poker_interfaces.msg import MotorFeedback
     from poker_interfaces.action import MovePose, MoveJoints
     _ROS_AVAILABLE = True
 except ImportError:
@@ -32,17 +40,14 @@ class _ArmRosNode(Node):
     def __init__(self):
         super().__init__('poker_arm_bridge')
 
-        # Publishers (topic-based streaming/proposals)
-        self.pub_target_pose = self.create_publisher(TargetPose, '/target_pose', 10)
-        self.pub_target_joints = self.create_publisher(TargetJoints, '/target_joints', 10)
-
         # Subscriber (telemetry)
         self.sub_motor_feedback = self.create_subscription(
             MotorFeedback, '/motor_feedback', self._on_motor_feedback, 10)
 
         # Action clients (blocking execution with feedback)
         self.pose_action_client = ActionClient(self, MovePose, '/move_pose')
-        self.joints_action_client = ActionClient(self, MoveJoints, '/move_joints')
+        self.joints_action_client = ActionClient(
+            self, MoveJoints, '/move_joints')
 
         # Feedback relay
         self._feedback_callbacks: list[Callable] = []
@@ -101,7 +106,8 @@ class ArmRosBridge(QObject):
     def _try_init_ros(self):
         """Attempt to import rclpy and init. Sets self._ros_available."""
         if not _ROS_AVAILABLE:
-            logger.info("ArmRosBridge: rclpy/poker_interfaces not installed. Arm control disabled.")
+            logger.info(
+                "ArmRosBridge: rclpy/poker_interfaces not installed. Arm control disabled.")
             self.connection_changed.emit(False)
             return
 
@@ -113,13 +119,15 @@ class ArmRosBridge(QObject):
 
             self._spin_timer = QTimer()
             self._spin_timer.timeout.connect(self._spin_once)
-            self._spin_timer.start(10)  # 100 Hz, matches arm controller branch pattern
+            # 100 Hz, matches arm controller branch pattern
+            self._spin_timer.start(10)
 
             self._ros_available = True
             self.connection_changed.emit(True)
             logger.info("ArmRosBridge: ROS 2 connected.")
         except Exception as e:
-            logger.warning(f"ArmRosBridge: ROS 2 init failed ({e}). Arm control disabled.")
+            logger.warning(
+                f"ArmRosBridge: ROS 2 init failed ({e}). Arm control disabled.")
             self._ros_available = False
             self.connection_changed.emit(False)
 
@@ -141,27 +149,55 @@ class ArmRosBridge(QObject):
         """Forward motor feedback from ROS callback to Qt signal."""
         self.feedback_received.emit(data)
 
-    # --- Public API: Topic-based (fire-and-forget proposals) ---
+    # --- Validation helpers ----------------------------------------------
 
-    def publish_pose_proposal(self, x: float, y: float, z: float,
-                              pitch: float, roll: float, duration: float):
-        """Publish a pose proposal on /target_pose. Non-blocking."""
-        if not self._ros_available or self._node is None:
-            return
-        msg = TargetPose()
-        msg.x, msg.y, msg.z = x, y, z
-        msg.pitch, msg.roll = pitch, roll
-        msg.duration = duration
-        self._node.pub_target_pose.publish(msg)
+    @staticmethod
+    def _validate_pose(x: float, y: float, z: float,
+                       pitch: float, roll: float, duration: float) -> Optional[str]:
+        """Return None if the pose is plausible, else a neutral diagnostic string.
 
-    def publish_joint_proposal(self, joints: list, duration: float):
-        """Publish a joint proposal on /target_joints. Non-blocking."""
-        if not self._ros_available or self._node is None:
-            return
-        msg = TargetJoints()
-        msg.joints = [float(j) for j in joints]
-        msg.duration = duration
-        self._node.pub_target_joints.publish(msg)
+        Diagnostics are intentionally terse for autonomous logs on the Pi.
+        """
+        if not all(isinstance(v, (int, float)) for v in (x, y, z, pitch, roll, duration)):
+            return "non-numeric pose component"
+        if duration <= 0.0:
+            return "non-positive duration"
+        reach = math.sqrt(x * x + y * y + z * z)
+        if reach > MAX_REACH_M:
+            return f"reach {reach:.3f}m > MAX_REACH_M ({MAX_REACH_M:.2f})"
+        if abs(pitch) > MAX_TILT_RAD or abs(roll) > MAX_TILT_RAD:
+            return f"|pitch|={abs(pitch):.2f} or |roll|={abs(roll):.2f} > MAX_TILT_RAD"
+        return None
+
+    @staticmethod
+    def _validate_joints(joints, duration: float) -> Optional[str]:
+        """Return None if the joint vector is plausible, else a diagnostic string."""
+        try:
+            joints_list = list(joints)
+        except TypeError:
+            return "joints not iterable"
+        if len(joints_list) != N_JOINTS:
+            return f"len(joints)={len(joints_list)} != {N_JOINTS}"
+        if not all(isinstance(j, (int, float)) for j in joints_list):
+            return "non-numeric joint value"
+        if duration <= 0.0:
+            return "non-positive duration"
+        for i, j in enumerate(joints_list):
+            if abs(j) > MAX_JOINT_RAD:
+                logger.warning(
+                    "ArmRosBridge: joint[%d]=%.3f exceeds MAX_JOINT_RAD=%.2f",
+                    i, j, MAX_JOINT_RAD)
+        return None
+
+    # NOTE: The previous topic-based "proposal" API
+    # (``publish_pose_proposal`` on /target_pose, ``publish_joint_proposal``
+    # on /target_joints) has been removed. The current PokerController only
+    # listens on the /move_pose and /move_joints **action** servers, so a
+    # bare topic publish reached no planner. ``move_pose`` / ``move_joints``
+    # below are the supported way to dispatch motion. The /target_pose
+    # subscription that ``poker_control.sim_bridge`` keeps is now a
+    # placeholder for future digital-twin sync work — nothing in this
+    # codebase publishes to it.
 
     # --- Public API: Action-based (goal/feedback/result) ---
 
@@ -172,13 +208,20 @@ class ArmRosBridge(QObject):
         Results delivered via move_completed signal.
         Feedback delivered via move_feedback signal.
         """
+        err = self._validate_pose(x, y, z, pitch, roll, duration)
+        if err is not None:
+            logger.warning("ArmRosBridge.move_pose rejected: %s", err)
+            self.move_completed.emit(False, -1.0)
+            return
+
         if not self._ros_available or self._node is None:
             self.move_completed.emit(False, -1.0)
             return
 
         client = self._node.pose_action_client
         if not client.wait_for_server(timeout_sec=0.5):
-            logger.warning("ArmRosBridge: MovePose action server not available.")
+            logger.warning(
+                "ArmRosBridge: MovePose action server not available.")
             self.move_completed.emit(False, -1.0)
             return
 
@@ -188,7 +231,8 @@ class ArmRosBridge(QObject):
         goal.duration = duration
 
         self.move_started.emit('pose')
-        future = client.send_goal_async(goal, feedback_callback=self._on_action_feedback)
+        future = client.send_goal_async(
+            goal, feedback_callback=self._on_action_feedback)
         future.add_done_callback(self._on_goal_accepted)
 
     def move_joints(self, joints: list, duration: float):
@@ -196,13 +240,20 @@ class ArmRosBridge(QObject):
         Send a MoveJoints action goal. Non-blocking (async).
         Results delivered via move_completed signal.
         """
+        err = self._validate_joints(joints, duration)
+        if err is not None:
+            logger.warning("ArmRosBridge.move_joints rejected: %s", err)
+            self.move_completed.emit(False, -1.0)
+            return
+
         if not self._ros_available or self._node is None:
             self.move_completed.emit(False, -1.0)
             return
 
         client = self._node.joints_action_client
         if not client.wait_for_server(timeout_sec=0.5):
-            logger.warning("ArmRosBridge: MoveJoints action server not available.")
+            logger.warning(
+                "ArmRosBridge: MoveJoints action server not available.")
             self.move_completed.emit(False, -1.0)
             return
 
@@ -211,7 +262,8 @@ class ArmRosBridge(QObject):
         goal.duration = duration
 
         self.move_started.emit('joints')
-        future = client.send_goal_async(goal, feedback_callback=self._on_action_feedback)
+        future = client.send_goal_async(
+            goal, feedback_callback=self._on_action_feedback)
         future.add_done_callback(self._on_goal_accepted)
 
     def cancel_move(self):
@@ -230,12 +282,14 @@ class ArmRosBridge(QObject):
 
     def _on_action_feedback(self, feedback_msg):
         fb = feedback_msg.feedback
-        self.move_feedback.emit(float(fb.current_error), float(fb.elapsed_time))
+        self.move_feedback.emit(float(fb.current_error),
+                                float(fb.elapsed_time))
 
     def _on_action_result(self, future):
         result = future.result().result
         self._active_goal_handle = None
-        self.move_completed.emit(bool(result.success), float(result.final_error))
+        self.move_completed.emit(bool(result.success),
+                                 float(result.final_error))
 
     # --- Callback registration (non-Qt, for services layer) ---
 

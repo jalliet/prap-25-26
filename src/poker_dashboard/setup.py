@@ -17,7 +17,6 @@ setup(
     maintainer_email='faisallawan08@gmail.com',
     description='Qt6 Dashboard for Poker Arm',
     license='Apache-2.0',
-    tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             'dashboard = poker_dashboard.dashboard_node:main',

@@ -1,6 +1,40 @@
+
 # CLAUDE.md
 
-This file provides guidance to Claude Code when working with code in this repository.
+This file provides guidance to Claude Code and developers when working with code in this repository.
+
+---
+
+## Quick Reference (see README.md for full details)
+
+### Prerequisites
+- **Python 3.12+** (use pyenv or system Python)
+- **OS:** Ubuntu 22.04/24.04 or Raspberry Pi OS (Bookworm)
+- **Cameras:** OAK-D Lite (card detection), Logitech C925e (chip segmentation)
+- **Robot Arm:** SO101 6-DOF (optional)
+
+### Setup & Install
+1. Clone repo into ROS 2 workspace (~/poker_arm_ws/src)
+2. Create venv: `python3.12 -m venv venv && source venv/bin/activate`
+3. Install deps: `pip install -r requirements.txt`
+4. Build (ROS 2): `./build.sh` (not `colcon build`)
+5. Source: `source install/setup.bash`
+6. Run dashboard: `python main.py` or `bash scripts/start_game.sh`
+
+### Launch Modes (examples)
+- Sim: `ros2 launch poker_bringup poker_arm.launch.py mode:=sim`
+- PC hardware: `ros2 launch poker_bringup poker_arm.launch.py mode:=pc_hardware`
+- Pi headless: `ros2 launch poker_bringup poker_arm.launch.py mode:=pi_hardware_headless`
+
+### Troubleshooting
+- **ModuleNotFoundError (casadi, PySide6, etc):** Always use `./build.sh` to patch entry points for venv. If broken, re-run `./build.sh` and `source install/setup.bash`.
+- **Serial permission denied:** `sudo chmod 666 /dev/ttyACM0` (quick), or add user to `dialout` group for permanent fix.
+- **Gazebo hangs (Ogre2):** Project launch files force Ogre1 and set GZ_IP; no action needed unless you forked launch files.
+- **Gazebo crashes (WSL2):** `export LIBGL_ALWAYS_SOFTWARE=1` before launching.
+
+For full setup, architecture, and troubleshooting, see [README.md](README.md).
+
+---
 
 ## Project Overview
 

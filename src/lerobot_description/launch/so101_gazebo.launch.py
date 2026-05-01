@@ -26,7 +26,11 @@ def generate_launch_description():
             str(Path(lerobot_description).parent.resolve())
             ]
         )
-    
+
+    # Pin gz-transport to loopback to avoid multi-interface transport issues.
+    gz_ip = SetEnvironmentVariable(name="GZ_IP", value="127.0.0.1")
+
+
     robot_description = ParameterValue(Command([
             "xacro ",
             LaunchConfiguration("model"),
@@ -45,7 +49,7 @@ def generate_launch_description():
                 PythonLaunchDescriptionSource([os.path.join(
                     get_package_share_directory("ros_gz_sim"), "launch"), "/gz_sim.launch.py"]),
                 launch_arguments=[
-                    ("gz_args", [" -v 4 -r empty.sdf "]
+                    ("gz_args", [" -v 4 -r empty.sdf --render-engine ogre"]
                     )
                 ]
              )
@@ -69,6 +73,7 @@ def generate_launch_description():
     return LaunchDescription([
         model_arg,
         gazebo_resource_path,
+        gz_ip,
         robot_state_publisher_node,
         gazebo,
         gz_spawn_entity,
