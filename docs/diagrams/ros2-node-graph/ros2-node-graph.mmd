@@ -1,6 +1,7 @@
 flowchart TB
     subgraph Qt["Qt Application (Host PC)"]
         ARB["_ArmRosNode<br/>(poker_arm_bridge)"]
+        TIB["_TableIoNode<br/>(table_io_bridge)"]
     end
 
     subgraph ROS2["ROS 2 Nodes"]
@@ -10,6 +11,7 @@ flowchart TB
         JSB["joint_state_broadcaster"]
         FPC["forward_position_controller"]
         RSP["robot_state_publisher"]
+        PT["pump_test<br/>(GPIO · pi_hardware only)"]
     end
 
     subgraph Gazebo["Gazebo Simulation"]
@@ -52,10 +54,14 @@ flowchart TB
     %% RSP publishes TF and robot_description
     RSP -->|"/tf + /robot_description"| GAZ
 
+    %% Table IO bridge ↔ pump_test (pi_hardware modes)
+    PT -->|"/button_count (Int32)"| TIB
+    TIB -->|"/pump_control (Int32)"| PT
+
     classDef qt fill:#4A90E2,stroke:#2B5C8A,color:#fff
     classDef ros fill:#50C878,stroke:#2D7A47,color:#fff
     classDef sim fill:#9B59B6,stroke:#6C3483,color:#fff
 
-    class ARB qt
-    class CTRL,SB,DRV,JSB,FPC,RSP ros
+    class ARB,TIB qt
+    class CTRL,SB,DRV,JSB,FPC,RSP,PT ros
     class GAZ sim

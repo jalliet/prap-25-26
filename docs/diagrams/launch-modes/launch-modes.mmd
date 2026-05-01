@@ -22,6 +22,7 @@ flowchart LR
     subgraph Hardware["Hardware"]
         DRV["scservo_driver"]
         RSP["robot_state_publisher"]
+        PT["pump_test<br/>(GPIO button + pump)"]
     end
 
     SIM --> GAZ
@@ -48,10 +49,12 @@ flowchart LR
     PI --> DASH
     PI --> DRV
     PI --> RSP
+    PI --> PT
 
     PIH --> CTRL
     PIH --> DRV
     PIH --> RSP
+    PIH --> PT
 
     DO --> DASH
 

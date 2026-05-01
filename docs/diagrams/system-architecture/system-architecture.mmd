@@ -8,6 +8,8 @@ graph TB
         CS["BirdseyeService<br/>OAK-D DepthAI"]
         CSS["ChipSegService<br/>C925e · cv2.VideoCapture"]
         ARB["ArmRosBridge<br/>Singleton · Optional ROS 2"]
+        TIB["TableIoBridge<br/>Singleton · Button + Pump"]
+        AC["ArmChoreographer<br/>Sequenced arm steps + pump"]
     end
 
     subgraph Vision["Vision System (YOLOv8)"]
@@ -18,6 +20,7 @@ graph TB
     subgraph Poker["Poker Engine"]
         GS["GameState<br/>Phase FSM · Signals"]
         PM["Player · Card · Chips<br/>Action · Deck"]
+        EV["evaluator.py<br/>phevaluator wrapper"]
     end
 
     subgraph ROS2["ROS 2 Workspace (src/)"]
@@ -25,11 +28,14 @@ graph TB
         SB["SimBridge"]
         DRV["scservo_driver<br/>C++ STS3215"]
         GAZ["Gazebo<br/>SO-101 Simulation"]
+        PT["pump_test<br/>GPIO Button + Pump"]
     end
 
     VC -->|"frame_ready · cards_detected<br/>chip_frame_ready · chips_detected"| MW
-    GS -->|"phase / pot / turn<br/>signals"| MW
+    GS -->|"phase / pot / turn<br/>action_rejected · hand_started<br/>signals"| MW
+    GS -->|"on_dealing_required<br/>on_community_flip_required<br/>on_pot_collection_required"| MW
     ARB -->|"connection_changed<br/>move_completed"| MW
+    TIB -->|"turn_advance_requested(seat)"| MW
 
     VC --> CS
     VC --> CSS
@@ -39,11 +45,21 @@ graph TB
     VC -.->|"request_arm_move()"| ARB
 
     GS --> PM
+    GS -.->|"best_hand_score()"| EV
+
+    MW -->|"queues choreographer<br/>sequences from orchestration<br/>signals"| AC
+    AC -->|"sequence_started · sequence_step<br/>sequence_finished"| MW
+    AC -->|"move_pose / move_joints<br/>action calls"| ARB
+    AC -.->|"pump_requested(bool)"| MW
+    MW -.->|"set_pump(state)"| TIB
+    TIB -.->|"pump_state_set(bool)"| MW
+    MW -.->|"_on_pump_done(state)"| AC
 
     ARB <-->|"topics / actions"| CTRL
     CTRL --> SB
     CTRL --> DRV
     SB <--> GAZ
+    TIB <-->|"/button_count<br/>/pump_control"| PT
 
     classDef gui fill:#4A90E2,stroke:#2B5C8A,color:#fff
     classDef svc fill:#50C878,stroke:#2D7A47,color:#fff
@@ -52,7 +68,7 @@ graph TB
     classDef ros fill:#9B59B6,stroke:#6C3483,color:#fff
 
     class MW gui
-    class VC,CS,CSS,ARB svc
+    class VC,CS,CSS,ARB,TIB,AC svc
     class CD,CHI vis
-    class GS,PM poker
-    class CTRL,SB,DRV,GAZ ros
+    class GS,PM,EV poker
+    class CTRL,SB,DRV,GAZ,PT ros

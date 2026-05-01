@@ -7,6 +7,11 @@ flowchart LR
             S3["on_card_detection_required"]
             S4["on_turn_change"]
             S5["on_player_action"]
+            S6["on_action_rejected"]
+            S8["on_hand_started"]
+            S9["on_dealing_required"]
+            S10["on_community_flip_required"]
+            S11["on_pot_collection_required"]
         end
         subgraph VC["VisionController"]
             V1["frame_ready"]
@@ -17,6 +22,16 @@ flowchart LR
         subgraph ARB["ArmRosBridge"]
             A1["connection_changed"]
             A2["move_completed"]
+        end
+        subgraph TIB["TableIoBridge"]
+            T1["turn_advance_requested"]
+            T2["pump_state_set"]
+        end
+        subgraph AC["ArmChoreographer"]
+            AC1["sequence_started"]
+            AC2["sequence_step"]
+            AC3["sequence_finished"]
+            AC4["pump_requested"]
         end
     end
 
@@ -33,6 +48,16 @@ flowchart LR
             MW8["_on_arm_move_completed()"]
             MW9["_update_chip_feed()"]
             MW10["_on_chips_detected()"]
+            MW11["_on_action_rejected()"]
+            MW12["_on_hand_started()"]
+            MW13["_on_turn_advance_requested()"]
+            MW14["update_player_list()"]
+            MW15["_update_button_states()"]
+            MW16["_on_dealing_required()"]
+            MW17["_on_community_flip_required()"]
+            MW18["_on_pot_collection_required()"]
+            MW19["sequence_status_label"]
+            MW20["sequence_rejection_label"]
         end
         subgraph VC_H["VisionController"]
             VC1["_handle_phase_change()"]
@@ -40,17 +65,36 @@ flowchart LR
             VC3["_handle_card_detection()"]
             VC4["_handle_player_action()"]
         end
+        subgraph AC_H["ArmChoreographer"]
+            AC_PUMP["_on_pump_done()"]
+        end
+        subgraph TIB_H["TableIoBridge"]
+            TIB_PUMP["set_pump(state)"]
+        end
     end
 
     S1 --> MW1
     S1 --> VC1
+    S1 --> MW14
+    S1 --> MW15
     S2 --> MW2
     S2 --> VC2
+    S2 --> MW14
     S3 --> MW3
     S3 --> VC3
     S4 --> MW4
+    S4 --> MW14
+    S4 --> MW15
 
     S5 --> VC4
+    S5 --> MW14
+    S5 --> MW15
+
+    S6 --> MW11
+    S8 --> MW12
+    S9 --> MW16
+    S10 --> MW17
+    S11 --> MW18
 
     V1 --> MW5
     V2 --> MW6
@@ -60,13 +104,26 @@ flowchart LR
     A1 --> MW7
     A2 --> MW8
 
+    T1 --> MW13
+    T2 --> AC_PUMP
+
+    AC1 --> MW19
+    AC2 --> MW19
+    AC3 --> MW19
+    AC3 --> MW20
+    AC4 --> TIB_PUMP
+
     classDef gs fill:#C75050,stroke:#8A2D2D,color:#fff
     classDef vc fill:#50C878,stroke:#2D7A47,color:#fff
     classDef arb fill:#9B59B6,stroke:#6C3483,color:#fff
+    classDef tib fill:#E8A838,stroke:#A06B1F,color:#fff
     classDef mw fill:#4A90E2,stroke:#2B5C8A,color:#fff
+    classDef ac fill:#5A6F8E,stroke:#33425A,color:#fff
 
-    class S1,S2,S3,S4,S5 gs
+    class S1,S2,S3,S4,S5,S6,S8,S9,S10,S11 gs
     class V1,V2,V3,V4 vc
     class A1,A2 arb
-    class MW1,MW2,MW3,MW4,MW5,MW6,MW7,MW8,MW9,MW10 mw
+    class T1,T2,TIB_PUMP tib
+    class MW1,MW2,MW3,MW4,MW5,MW6,MW7,MW8,MW9,MW10,MW11,MW12,MW13,MW14,MW15,MW16,MW17,MW18,MW19,MW20 mw
     class VC1,VC2,VC3,VC4 vc
+    class AC1,AC2,AC3,AC4,AC_PUMP ac
