@@ -1,16 +1,14 @@
-"""
-ROS 2 bridge for the poker robot arm controller.
-
-All ROS 2 imports are optional. When rclpy or poker_interfaces are not
-installed, the bridge silently degrades to no-op stubs so the main
-application continues to function for camera and poker logic only.
-"""
+"""Qt-facing arm bridge that dispatches ROS 2 actions over paramiko SSH."""
 from __future__ import annotations
+
 import logging
 import math
-from typing import Optional, Callable
+from typing import Optional
 
-from PySide6.QtCore import QObject, Signal, QTimer
+import yaml
+from PySide6.QtCore import QObject, QThread, Signal
+
+from services._ssh_session import SshSession
 
 logger = logging.getLogger(__name__)
 
@@ -21,66 +19,135 @@ MAX_REACH_M: float = 0.6          # generous outer bound (true reach ~0.4 m)
 MAX_JOINT_RAD: float = 2.0 * math.pi
 MAX_TILT_RAD: float = math.pi     # |pitch|, |roll| > π is almost certainly wrong
 
-# Conditional ROS 2 imports
-try:
-    import rclpy
-    from rclpy.node import Node
-    from rclpy.action import ActionClient
-    from poker_interfaces.msg import MotorFeedback
-    from poker_interfaces.action import MovePose, MoveJoints
-    _ROS_AVAILABLE = True
-except ImportError:
-    _ROS_AVAILABLE = False
-    Node = object  # stub for class inheritance
 
+class _ActionWorker(QThread):
+    """Owns one paramiko channel and parses one ``ros2 action send_goal`` invocation."""
 
-class _ArmRosNode(Node):
-    """Low-level ROS 2 node. Only instantiated when rclpy is available."""
+    feedback_emitted = Signal(float, float)        # elapsed_time, current_error
+    move_completed_emitted = Signal(bool, float)   # success, final_error
 
-    def __init__(self):
-        super().__init__('poker_arm_bridge')
+    def __init__(self, action_name: str, payload_yaml: str,
+                 parent: Optional[QObject] = None) -> None:
+        super().__init__(parent)
+        self._action_name = action_name
+        self._payload_yaml = payload_yaml
+        self._channel = None  # paramiko.Channel | None
 
-        # Subscriber (telemetry)
-        self.sub_motor_feedback = self.create_subscription(
-            MotorFeedback, '/motor_feedback', self._on_motor_feedback, 10)
+    def run(self) -> None:
+        """Run the action, parse YAML blocks from stdout, emit feedback/result."""
+        if self._action_name == "pose":
+            topic = "/move_pose"
+            type_str = "poker_interfaces/action/MovePose"
+        elif self._action_name == "joints":
+            topic = "/move_joints"
+            type_str = "poker_interfaces/action/MoveJoints"
+        else:
+            logger.warning("_ActionWorker: unknown action_name=%r", self._action_name)
+            self.move_completed_emitted.emit(False, -1.0)
+            return
 
-        # Action clients (blocking execution with feedback)
-        self.pose_action_client = ActionClient(self, MovePose, '/move_pose')
-        self.joints_action_client = ActionClient(
-            self, MoveJoints, '/move_joints')
+        cmd = (
+            f'ros2 action send_goal --feedback {topic} {type_str} '
+            f'"{self._payload_yaml}"'
+        )
 
-        # Feedback relay
-        self._feedback_callbacks: list[Callable] = []
+        try:
+            session = SshSession()
+            self._channel = session.open_channel(cmd)
+        except Exception as exc:
+            logger.warning("_ActionWorker: open_channel failed: %s", exc)
+            self.move_completed_emitted.emit(False, -1.0)
+            return
 
-    def _on_motor_feedback(self, msg):
-        """Convert ROS msg to plain dict, invoke registered callbacks."""
-        data = {
-            'servo_ids': list(msg.servo_ids),
-            'positions': list(msg.positions),
-            'speeds': list(msg.speeds),
-            'loads': list(msg.loads),
-            'voltages': list(msg.voltages),
-            'temperatures': list(msg.temperatures),
-            'feedback_valid': msg.feedback_valid,
-        }
-        for cb in self._feedback_callbacks:
-            cb(data)
+        buffer = ""
+        completed = False
+        try:
+            while True:
+                chunk = self._channel.recv(4096)
+                if not chunk:
+                    break
+                buffer += chunk.decode(errors="replace")
+                # ros2 action send_goal --feedback emits YAML documents separated
+                # by '---' lines; split, parse complete blocks, keep the trailing
+                # partial in the buffer for the next read.
+                while "\n---\n" in buffer or buffer.startswith("---\n"):
+                    if buffer.startswith("---\n"):
+                        block = ""
+                        buffer = buffer[len("---\n"):]
+                    else:
+                        block, _, buffer = buffer.partition("\n---\n")
+                    block = block.strip()
+                    if not block:
+                        continue
+                    parsed = yaml.safe_load(block)
+                    if not isinstance(parsed, dict):
+                        continue
+                    if "feedback" in parsed:
+                        fb = parsed["feedback"] or {}
+                        self.feedback_emitted.emit(
+                            float(fb.get("elapsed_time", 0.0)),
+                            float(fb.get("current_error", 0.0)),
+                        )
+                    elif "result" in parsed:
+                        res = parsed["result"] or {}
+                        self.move_completed_emitted.emit(
+                            bool(res.get("success", False)),
+                            float(res.get("final_error", -1.0)),
+                        )
+                        completed = True
+                        break
+                if completed:
+                    break
+        except Exception as exc:
+            logger.warning("_ActionWorker: read/parse failed: %s", exc)
+            self.move_completed_emitted.emit(False, -1.0)
+            completed = True
+
+        # CLI may close stdout without a final --- separator after result block.
+        tail = buffer.strip()
+        if tail and not completed:
+            try:
+                parsed = yaml.safe_load(tail)
+                if isinstance(parsed, dict) and "result" in parsed:
+                    res = parsed["result"] or {}
+                    self.move_completed_emitted.emit(
+                        bool(res.get("success", False)),
+                        float(res.get("final_error", -1.0)),
+                    )
+                    completed = True
+            except Exception:
+                pass
+
+        if not completed:
+            # Channel closed before a result block arrived.
+            self.move_completed_emitted.emit(False, -1.0)
+
+        try:
+            if self._channel is not None:
+                self._channel.close()
+        except Exception:
+            pass
+        self._channel = None
+
+    def cancel(self) -> None:
+        """Close the channel from another thread to abort the read loop."""
+        ch = self._channel
+        if ch is None:
+            return
+        try:
+            ch.close()
+        except Exception:
+            pass
 
 
 class ArmRosBridge(QObject):
-    """
-    Qt-compatible bridge to the ROS 2 arm controller stack.
-
-    Gracefully degrades to a no-op if rclpy or poker_interfaces
-    are not installed. All public methods are safe to call regardless.
-    """
+    """Qt-compatible bridge that dispatches arm action goals over SSH."""
 
     # Qt Signals (for UI binding)
-    feedback_received = Signal(dict)
+    connection_changed = Signal(bool)     # SSH session up/down
     move_started = Signal(str)            # 'pose' or 'joints'
+    move_feedback = Signal(float, float)  # elapsed_time, current_error
     move_completed = Signal(bool, float)  # success, final_error
-    move_feedback = Signal(float, float)  # current_error, elapsed_time
-    connection_changed = Signal(bool)     # ros available True/False
 
     _instance = None
 
@@ -96,58 +163,14 @@ class ArmRosBridge(QObject):
         super().__init__()
         self._initialized = True
 
-        self._ros_available: bool = False
-        self._node: Optional[_ArmRosNode] = None
-        self._spin_timer: Optional[QTimer] = None
-        self._active_goal_handle = None
-
-        self._try_init_ros()
-
-    def _try_init_ros(self):
-        """Attempt to import rclpy and init. Sets self._ros_available."""
-        if not _ROS_AVAILABLE:
-            logger.info(
-                "ArmRosBridge: rclpy/poker_interfaces not installed. Arm control disabled.")
-            self.connection_changed.emit(False)
-            return
-
-        try:
-            if not rclpy.ok():
-                rclpy.init()
-            self._node = _ArmRosNode()
-            self._node._feedback_callbacks.append(self._relay_feedback)
-
-            self._spin_timer = QTimer()
-            self._spin_timer.timeout.connect(self._spin_once)
-            # 100 Hz, matches arm controller branch pattern
-            self._spin_timer.start(10)
-
-            self._ros_available = True
-            self.connection_changed.emit(True)
-            logger.info("ArmRosBridge: ROS 2 connected.")
-        except Exception as e:
-            logger.warning(
-                f"ArmRosBridge: ROS 2 init failed ({e}). Arm control disabled.")
-            self._ros_available = False
-            self.connection_changed.emit(False)
+        self._session = SshSession()
+        self._session.connection_changed.connect(self.connection_changed)
+        self._active_worker: Optional[_ActionWorker] = None
 
     @property
     def is_available(self) -> bool:
-        return self._ros_available
-
-    def _spin_once(self):
-        """Pump the ROS 2 event loop from within Qt's event loop."""
-        if self._node is None:
-            return
-        try:
-            if rclpy.ok():
-                rclpy.spin_once(self._node, timeout_sec=0)
-        except Exception:
-            pass
-
-    def _relay_feedback(self, data: dict):
-        """Forward motor feedback from ROS callback to Qt signal."""
-        self.feedback_received.emit(data)
+        """True while the underlying SSH session is connected."""
+        return self._session.is_connected
 
     # --- Validation helpers ----------------------------------------------
 
@@ -160,6 +183,8 @@ class ArmRosBridge(QObject):
         """
         if not all(isinstance(v, (int, float)) for v in (x, y, z, pitch, roll, duration)):
             return "non-numeric pose component"
+        if not all(math.isfinite(v) for v in (x, y, z, pitch, roll, duration)):
+            return "non-finite pose component"
         if duration <= 0.0:
             return "non-positive duration"
         reach = math.sqrt(x * x + y * y + z * z)
@@ -180,6 +205,10 @@ class ArmRosBridge(QObject):
             return f"len(joints)={len(joints_list)} != {N_JOINTS}"
         if not all(isinstance(j, (int, float)) for j in joints_list):
             return "non-numeric joint value"
+        if not all(math.isfinite(j) for j in joints_list):
+            return "non-finite joint value"
+        if not math.isfinite(duration):
+            return "non-finite duration"
         if duration <= 0.0:
             return "non-positive duration"
         for i, j in enumerate(joints_list):
@@ -189,127 +218,70 @@ class ArmRosBridge(QObject):
                     i, j, MAX_JOINT_RAD)
         return None
 
-    # NOTE: The previous topic-based "proposal" API
-    # (``publish_pose_proposal`` on /target_pose, ``publish_joint_proposal``
-    # on /target_joints) has been removed. The current PokerController only
-    # listens on the /move_pose and /move_joints **action** servers, so a
-    # bare topic publish reached no planner. ``move_pose`` / ``move_joints``
-    # below are the supported way to dispatch motion. The /target_pose
-    # subscription that ``poker_control.sim_bridge`` keeps is now a
-    # placeholder for future digital-twin sync work — nothing in this
-    # codebase publishes to it.
-
     # --- Public API: Action-based (goal/feedback/result) ---
 
     def move_pose(self, x: float, y: float, z: float,
-                  pitch: float, roll: float, duration: float):
-        """
-        Send a MovePose action goal. Non-blocking (async).
-        Results delivered via move_completed signal.
-        Feedback delivered via move_feedback signal.
-        """
+                  pitch: float, roll: float, duration: float) -> None:
+        """Dispatch a MovePose goal over SSH. Non-blocking; results via signals."""
         err = self._validate_pose(x, y, z, pitch, roll, duration)
         if err is not None:
             logger.warning("ArmRosBridge.move_pose rejected: %s", err)
             self.move_completed.emit(False, -1.0)
             return
 
-        if not self._ros_available or self._node is None:
-            self.move_completed.emit(False, -1.0)
-            return
+        payload = (
+            f"{{x: {float(x)}, y: {float(y)}, z: {float(z)}, "
+            f"pitch: {float(pitch)}, roll: {float(roll)}, "
+            f"duration: {float(duration)}}}"
+        )
+        self.move_started.emit("pose")
+        self._spawn_worker("pose", payload)
 
-        client = self._node.pose_action_client
-        if not client.wait_for_server(timeout_sec=0.5):
-            logger.warning(
-                "ArmRosBridge: MovePose action server not available.")
-            self.move_completed.emit(False, -1.0)
-            return
-
-        goal = MovePose.Goal()
-        goal.x, goal.y, goal.z = x, y, z
-        goal.pitch, goal.roll = pitch, roll
-        goal.duration = duration
-
-        self.move_started.emit('pose')
-        future = client.send_goal_async(
-            goal, feedback_callback=self._on_action_feedback)
-        future.add_done_callback(self._on_goal_accepted)
-
-    def move_joints(self, joints: list, duration: float):
-        """
-        Send a MoveJoints action goal. Non-blocking (async).
-        Results delivered via move_completed signal.
-        """
+    def move_joints(self, joints, duration: float) -> None:
+        """Dispatch a MoveJoints goal over SSH. Non-blocking; results via signals."""
         err = self._validate_joints(joints, duration)
         if err is not None:
             logger.warning("ArmRosBridge.move_joints rejected: %s", err)
             self.move_completed.emit(False, -1.0)
             return
 
-        if not self._ros_available or self._node is None:
-            self.move_completed.emit(False, -1.0)
+        joints_list = [float(j) for j in joints]
+        joints_str = ", ".join(repr(j) for j in joints_list)
+        payload = f"{{joints: [{joints_str}], duration: {float(duration)}}}"
+        self.move_started.emit("joints")
+        self._spawn_worker("joints", payload)
+
+    def cancel_move(self) -> None:
+        """Abort the active worker, if any. Triggers a failure result via signals."""
+        worker = self._active_worker
+        if worker is None:
             return
+        if worker.isRunning():
+            worker.cancel()
 
-        client = self._node.joints_action_client
-        if not client.wait_for_server(timeout_sec=0.5):
-            logger.warning(
-                "ArmRosBridge: MoveJoints action server not available.")
-            self.move_completed.emit(False, -1.0)
+    def shutdown(self) -> None:
+        """Cancel any in-flight worker and wait for it. SSH session is owned elsewhere."""
+        worker = self._active_worker
+        self._active_worker = None
+        if worker is None:
             return
+        if worker.isRunning():
+            worker.cancel()
+            # Bound the wait so a stuck SSH connect cannot hang teardown.
+            worker.wait(2000)
 
-        goal = MoveJoints.Goal()
-        goal.joints = [float(j) for j in joints]
-        goal.duration = duration
+    # --- Internal -------------------------------------------------------
 
-        self.move_started.emit('joints')
-        future = client.send_goal_async(
-            goal, feedback_callback=self._on_action_feedback)
-        future.add_done_callback(self._on_goal_accepted)
+    def _spawn_worker(self, action_name: str, payload_yaml: str) -> None:
+        # Drop any prior worker before starting a new one so two threads do not
+        # race over the singleton SSH transport.
+        prior = self._active_worker
+        if prior is not None and prior.isRunning():
+            prior.cancel()
+            prior.wait(2000)
 
-    def cancel_move(self):
-        """Cancel the currently active action goal, if any."""
-        if self._active_goal_handle is not None:
-            self._active_goal_handle.cancel_goal_async()
-
-    def _on_goal_accepted(self, future):
-        goal_handle = future.result()
-        if not goal_handle.accepted:
-            self.move_completed.emit(False, -1.0)
-            return
-        self._active_goal_handle = goal_handle
-        result_future = goal_handle.get_result_async()
-        result_future.add_done_callback(self._on_action_result)
-
-    def _on_action_feedback(self, feedback_msg):
-        fb = feedback_msg.feedback
-        self.move_feedback.emit(float(fb.current_error),
-                                float(fb.elapsed_time))
-
-    def _on_action_result(self, future):
-        result = future.result().result
-        self._active_goal_handle = None
-        self.move_completed.emit(bool(result.success),
-                                 float(result.final_error))
-
-    # --- Callback registration (non-Qt, for services layer) ---
-
-    def on_feedback(self, callback: Callable[[dict], None]):
-        """Register a callback for motor feedback (dict with positions, etc.)."""
-        if self._node is not None:
-            self._node._feedback_callbacks.append(callback)
-
-    # --- Lifecycle ---
-
-    def shutdown(self):
-        """Clean shutdown of ROS 2 resources."""
-        if self._spin_timer:
-            self._spin_timer.stop()
-        if self._node:
-            self._node.destroy_node()
-            self._node = None
-        try:
-            if _ROS_AVAILABLE and rclpy.ok():
-                rclpy.shutdown()
-        except Exception:
-            pass
-        self._ros_available = False
+        worker = _ActionWorker(action_name=action_name, payload_yaml=payload_yaml)
+        worker.feedback_emitted.connect(self.move_feedback)
+        worker.move_completed_emitted.connect(self.move_completed)
+        self._active_worker = worker
+        worker.start()
