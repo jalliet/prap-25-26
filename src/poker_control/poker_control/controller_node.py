@@ -22,7 +22,7 @@ class PokerController(Node):
 
         # --- Robot Configuration ---
         self.n_joints = 6
-        self.SERVO_ZERO = [1848, 1906, 500, 1859, 2050, 2013]
+        self.SERVO_ZERO = [1852, 1848, 501, 1849, 2050, 2015]
         self.SERVO_SIGNS = [1] * self.n_joints
         self.STEPS_PER_RAD = 4096.0 / (2.0 * np.pi)
         self.MAX_RPM = 50.0
@@ -285,7 +285,7 @@ class PokerController(Node):
         self.last_error = float(max_pos_error)
         self.last_elapsed = float(elapsed)
 
-        error_threshold = 0.05
+        error_threshold = 0.09  # ~5 degrees in radians
 
         if self.traj_index == len(self.q_ref_traj) - 1:
             if not self.goal_reached_logged:
