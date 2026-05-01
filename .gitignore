@@ -25,6 +25,13 @@ src/log/
 # Vision model weights directory
 # vision/
 vision/*.png
+vision/*.jpeg
+vision/*.jpg
+vision/*.pt
+vision/__pycache__/
+
+# Jupyter
+.ipynb_checkpoints/
 
 # Simulation artifacts
 debug_robot.urdf
