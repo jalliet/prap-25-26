@@ -1,23 +1,36 @@
 stateDiagram-v2
-    [*] --> PRE_FLOP: start_new_hand()
+    [*] --> PRE_FLOP: start_new_hand()<br/>emits on_hand_started
 
     PRE_FLOP --> FLOP: betting complete<br/>deal 3 community cards
     FLOP --> TURN: betting complete<br/>deal 1 card
     TURN --> RIVER: betting complete<br/>deal 1 card
     RIVER --> SHOWDOWN: betting complete
 
-    PRE_FLOP --> SHOWDOWN: all fold<br/>(1 player remaining)
-    FLOP --> SHOWDOWN: all fold
-    TURN --> SHOWDOWN: all fold
-    RIVER --> SHOWDOWN: all fold
+    PRE_FLOP --> SHOWDOWN: _jump_to_showdown()<br/>fold-out (1 left)
+    FLOP --> SHOWDOWN: _jump_to_showdown()<br/>fold-out
+    TURN --> SHOWDOWN: _jump_to_showdown()<br/>fold-out
+    RIVER --> SHOWDOWN: _jump_to_showdown()<br/>fold-out
 
-    SHOWDOWN --> [*]: hand complete
+    SHOWDOWN --> [*]: hand complete<br/>award + pot collection emit
 
     state PRE_FLOP {
         direction LR
         [*] --> PostBlinds
         PostBlinds --> BettingRound
         BettingRound --> [*]: _is_round_complete()
+        note right of PostBlinds
+            _post_blinds() uses
+            ActionType.POST_SB / POST_BB
+            via process_action
+        end note
+    }
+
+    state SHOWDOWN {
+        direction LR
+        [*] --> EvaluateHands
+        EvaluateHands --> AwardSidePots: phevaluator scores
+        AwardSidePots --> EmitPotCollection: collect_winnings(ChipStack)
+        EmitPotCollection --> [*]: on_pot_collection_required(winner_seat)
     }
 
     note right of FLOP
@@ -29,8 +42,12 @@ stateDiagram-v2
 
     note right of SHOWDOWN
         Signals emitted:
-        • on_phase_change(phase)
-        • on_pot_change(total)
-        • on_player_action(action)
-        • on_turn_change(player)
+        • on_phase_change(SHOWDOWN)
+        • on_pot_change (per side pot)
+        • on_player_action (each award)
+        • on_pot_collection_required(winner_seat)
+        Also emitted on FOLD-out:
+        • on_pot_collection_required(winner_seat)
+        Validation errors emit:
+        • on_action_rejected(reason)
     end note

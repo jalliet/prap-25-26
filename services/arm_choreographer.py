@@ -133,9 +133,18 @@ class TableMap:
 class Step:
     """A single command dispatched to the arm bridge.
 
-    ``kind`` is either ``'pose'`` or ``'joints'``. For ``'pose'`` ``args``
-    is a 5-tuple ``(x, y, z, pitch, roll)``; for ``'joints'`` ``args`` is
-    a 6-tuple of joint angles in radians. ``duration`` is seconds.
+    ``kind`` is one of ``'pose'``, ``'joints'`` or ``'pump'``.
+
+    - ``'pose'``: ``args`` is a 5-tuple ``(x, y, z, pitch, roll)``.
+    - ``'joints'``: ``args`` is a 6-tuple of joint angles in radians.
+    - ``'pump'``: ``args`` is a 1-tuple holding a single ``bool`` (``True``
+      requests pump ON, ``False`` requests pump OFF). ``duration`` carries
+      the GPIO settle delay in seconds. Pump steps do not call the bridge
+      and do not auto-advance — the choreographer emits ``pump_requested``
+      and waits for an external completion signal via ``_on_pump_done``.
+
+    ``duration`` is seconds. ``DEFAULT_DURATION_S`` (2.5s) suits arm
+    moves; pump steps want a much smaller settle delay (typically 0.05s).
     """
     kind: str
     args: Tuple[float, ...]
@@ -172,6 +181,10 @@ class ArmChoreographer(QObject):
     sequence_step = Signal(str, int)
     # name, success -- the entire sequence finished (or aborted on failure).
     sequence_finished = Signal(str, bool)
+    # state -- pump activation requested by a pump step. MainWindow routes
+    # this to ``TableIoBridge.set_pump`` and feeds the bridge's settle-delayed
+    # completion back into ``_on_pump_done`` to advance the sequence.
+    pump_requested = Signal(bool)
 
     def __init__(
         self,
@@ -236,7 +249,7 @@ class ArmChoreographer(QObject):
         ))
 
     def pick_up_deck(self) -> bool:
-        """Hover over the deck, descend to grasp, lift back up.
+        """Hover over the deck, descend to grasp, switch the pump on, retreat.
 
         Requires ``table_map.deck_xy()`` to be populated by the CV pipeline.
         """
@@ -249,13 +262,13 @@ class ArmChoreographer(QObject):
             steps=[
                 Step(kind="pose", args=self._hover(pickup)),
                 Step(kind="pose", args=pickup),
-                # TODO: insert gripper-close primitive once available.
+                Step(kind="pump", args=(True,), duration=0.05),
                 Step(kind="pose", args=self._hover(pickup)),
             ],
         ))
 
     def deal_card_to_seat(self, seat: int) -> bool:
-        """Carry the held card to the seat's drop pose, release, retreat.
+        """Carry the held card to the seat's drop pose, switch pump off, retreat.
 
         Args:
             seat: integer seat index matching ``poker.player.Player.seat``.
@@ -274,7 +287,7 @@ class ArmChoreographer(QObject):
             steps=[
                 Step(kind="pose", args=self._hover(drop)),
                 Step(kind="pose", args=drop),
-                # TODO: insert gripper-open primitive once available.
+                Step(kind="pump", args=(False,), duration=0.05),
                 Step(kind="pose", args=self._hover(drop)),
             ],
         ))
@@ -282,9 +295,9 @@ class ArmChoreographer(QObject):
     def flip_card(self, seat: int) -> bool:
         """Flip the card already lying at ``seat``.
 
-        Placeholder kinematics: descends with a roll offset, then ascends.
-        A real flip primitive will need a dedicated wrist motion (TODO).
-        Requires ``table_map.seat_xy(seat)`` to be populated.
+        Lift the card under suction, rotate it via wrist roll at hover
+        altitude so it clears the table during rotation, then lower and
+        release. Requires ``table_map.seat_xy(seat)`` to be populated.
         """
         xy = self.table_map.seat_xy(seat)
         if xy is None:
@@ -293,13 +306,22 @@ class ArmChoreographer(QObject):
                 f"seat_xy({seat}) unset (known: {self.table_map.known_seats()})",
             )
         base = self._pose(xy[0], xy[1], self.config.drop_z)
-        flipped: Pose = (xy[0], xy[1], self.config.drop_z,
-                         self.config.pitch, self.config.flip_roll)
+        # Flipped wrist orientation evaluated at hover altitude so the card
+        # lifts off the table during rotation rather than scraping across it.
+        flipped_hover: Pose = (xy[0], xy[1],
+                               self.config.drop_z + self.config.hover_dz,
+                               self.config.pitch, self.config.flip_roll)
+        flipped_drop: Pose = (xy[0], xy[1], self.config.drop_z,
+                              self.config.pitch, self.config.flip_roll)
         return self._run(Sequence(
             name=f"flip_card_{seat}",
             steps=[
                 Step(kind="pose", args=self._hover(base)),
-                Step(kind="pose", args=flipped),
+                Step(kind="pose", args=base),
+                Step(kind="pump", args=(True,), duration=0.05),
+                Step(kind="pose", args=flipped_hover),
+                Step(kind="pose", args=flipped_drop),
+                Step(kind="pump", args=(False,), duration=0.05),
                 Step(kind="pose", args=self._hover(base)),
             ],
         ))
@@ -373,7 +395,12 @@ class ArmChoreographer(QObject):
         return True
 
     def _dispatch_current_step(self) -> None:
-        """Send the step at ``self._step_idx`` to the bridge."""
+        """Send the step at ``self._step_idx`` to the bridge.
+
+        Pump steps are an exception: they do not touch the bridge. The
+        dispatcher emits ``pump_requested`` and returns. Advancement waits
+        on ``_on_pump_done`` driven by the external bridge round-trip.
+        """
         assert self._current is not None
         step = self._current.steps[self._step_idx]
         if step.kind == "pose":
@@ -393,11 +420,34 @@ class ArmChoreographer(QObject):
                 self._finish(False)
                 return
             self._bridge.move_joints(list(step.args), step.duration)
+        elif step.kind == "pump":
+            if len(step.args) != 1 or not isinstance(step.args[0], bool):
+                logger.error(
+                    "ArmChoreographer: '%s' step %d has bad pump args %r",
+                    self._current.name, self._step_idx, step.args)
+                self._finish(False)
+                return
+            state = step.args[0]
+            logger.info(
+                "ArmChoreographer: '%s' step %d pump_requested(%s)",
+                self._current.name, self._step_idx, state)
+            self.pump_requested.emit(state)
         else:
             logger.error(
                 "ArmChoreographer: '%s' step %d unknown kind %r",
                 self._current.name, self._step_idx, step.kind)
             self._finish(False)
+
+    def _on_pump_done(self, _state: bool) -> None:
+        """Advance the sequence after a pump step completes externally.
+
+        The bridge emits ``pump_state_set`` once the GPIO settle delay
+        elapses; MainWindow routes that into this slot. Treat the pump
+        command as a successful move so the existing advance path runs.
+        The ``_state`` argument exists for signal-signature symmetry and
+        is ignored.
+        """
+        self._on_move_completed(True, 0.0)
 
     def _on_move_completed(self, success: bool, _final_error: float) -> None:
         """Handler for ``ArmRosBridge.move_completed``."""

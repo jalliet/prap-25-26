@@ -50,15 +50,21 @@ class Player:
         self.status: PlayerStatus = PlayerStatus.SITTING_OUT
         self.position_label: str = ""
         self.actions: List[str] = []  # Action history for current hand
+        self.total_committed: int = 0  # Sum of chips committed across all betting rounds this hand
     
     def reset_for_new_hand(self) -> None:
-        """Resets volatile per-hand state for a fresh deal."""
+        """Resets volatile per-hand state for a fresh deal.
+
+        Preserves SITTING_OUT — only ACTIVE/FOLDED/ALL_IN are reset to ACTIVE.
+        """
         self.hole_cards = None
         self.current_bet = 0
-        self.status = PlayerStatus.ACTIVE
+        if self.status != PlayerStatus.SITTING_OUT:
+            self.status = PlayerStatus.ACTIVE
         self.position_label = ""
         self.actions = []
-    
+        self.total_committed = 0
+
     def set_hole_cards(self, cards: List[Card]) -> None:
         """Assigns the player's hole cards."""
         if len(cards) != 2:
@@ -70,36 +76,39 @@ class Player:
         self.status = PlayerStatus.FOLDED
         self.actions.append("fold")
     
-    def bet(self, amount: int) -> int:
+    def bet(self, amount: int) -> ChipStack:
         """
-        Commits chips from the player's stack to the pot.
-        
+        Commits chips from the player's stack to the pot, preserving chip colour.
+
         Args:
             amount: The number of chips the player intends to bet.
         Returns:
-            The actual amount bet (capped by stack size if all-in).
+            ChipStack containing the actual chips removed (capped by stack if all-in).
         """
-
         max_bet = self.stack.total
         actual_bet = min(amount, max_bet)
 
-        # Update stack: Deduct amount by recreating stack from new total
-        # Ideally, we would remove specific chips, but total-based update works for virtual stacks
-        new_total = self.stack.total - actual_bet 
-        self.stack = ChipStack.from_total(new_total)
-        
+        # Build the chip stack to remove using greedy from-total over what we have.
+        # Fallback: if exact denominations not available, ChipStack.from_total reconstructs.
+        removed = ChipStack.from_total(actual_bet)
+        if self.stack.can_remove_stack(removed):
+            self.stack.remove_stack(removed)
+        else:
+            # Greedy fallback: rebuild stack from new total (loses colour but never fails)
+            new_total = self.stack.total - actual_bet
+            self.stack = ChipStack.from_total(new_total)
+            removed = ChipStack.from_total(actual_bet)
+
         self.current_bet += actual_bet
-        
-        # Check if all-in
+
         if self.stack.is_empty():
             self.status = PlayerStatus.ALL_IN
-        
-        return actual_bet
-    
-    def collect_winnings(self, amount: int) -> None:
-        """Adds winnings to the player's stack."""
-        new_total = self.stack.total + amount
-        self.stack = ChipStack.from_total(new_total)
+
+        return removed
+
+    def collect_winnings(self, stack: ChipStack) -> None:
+        """Adds a ChipStack of winnings to the player's stack, preserving colour."""
+        self.stack.add_stack(stack)
     
     def is_active(self) -> bool:
         """Returns True if the player can still take actions (not folded, not all-in)."""

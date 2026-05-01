@@ -1,22 +1,25 @@
 import os
+import math
 import cv2
 import numpy as np
 from datetime import datetime
 from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
-                               QLabel, QFrame, QListWidget, QTextEdit, QSizePolicy, QSpinBox, QSplitter, QPushButton)
+                               QLabel, QFrame, QListWidget, QTextEdit, QSizePolicy, QSpinBox, QSplitter, QPushButton, QGroupBox)
 from PySide6.QtCore import Qt, QTimer, QSize
+from PySide6.QtGui import QColor, QBrush, QPixmap, QPainter, QFont
 from PySide6.QtSvgWidgets import QSvgWidget
 from gui.utils import convert_cv_qt
 from services.vision_controller import VisionController, VisionMode
 from services.arm_ros_bridge import ArmRosBridge
 from services.arm_choreographer import ArmChoreographer
+from services.table_io_bridge import TableIoBridge
 from poker.game_state import GameState, GamePhase
-from poker.player import Player
+from poker.player import Player, PlayerStatus
 from vision.draw_utils import draw_card_detections
 
 from poker.action import Action, ActionType
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Callable
 import subprocess
 import signal
 
@@ -79,15 +82,43 @@ class MainWindow(QMainWindow):
         # home, pick_up_deck). XY positions are populated at runtime by the
         # CV pipeline through ``self.choreographer.table_map``.
         self.choreographer = ArmChoreographer(self.arm_bridge, parent=self)
+        # UI status label connection lives ~line 447; both fire intentionally
         self.choreographer.sequence_finished.connect(
             self._on_choreographer_sequence_finished)
-        
+
+        # Table-side IO bridge (button + pump)
+        self.table_io_bridge = TableIoBridge()
+        self.table_io_bridge.turn_advance_requested.connect(self._on_button_press)
+        # Pump round-trip: choreographer requests state, bridge confirms
+        # settle, choreographer advances on the confirmation.
+        self.choreographer.pump_requested.connect(self.table_io_bridge.set_pump)
+        self.table_io_bridge.pump_state_set.connect(self.choreographer._on_pump_done)
+
         # Simulation process handle (set when user starts the sim)
         self.sim_process = None
         # Add some dummy players for testing purposes
         self.game_state.add_player(Player(0, "Hero", 0))
         self.game_state.add_player(Player(1, "Villain 1", 1))
         self.game_state.add_player(Player(2, "Villain 2", 2))
+        # Cache player count for choreography helpers (community indices use
+        # num_players + i so the choreographer can reuse seat lookups).
+        self._num_players = len(self.game_state.players)
+
+        self._sequence_queue: list[Callable[[], bool]] = []
+        self._next_community_to_flip: int = 0
+
+        # TODO: replace placeholder XY once CV emits seat/deck/pot positions
+        self.choreographer.table_map.set_deck_xy(0.20, 0.00)
+        self.choreographer.table_map.set_pot_xy(0.00, 0.00)
+        N = self._num_players
+        for i in range(N):
+            angle = 2 * math.pi * i / N
+            self.choreographer.table_map.set_seat_xy(
+                i, 0.25 * math.cos(angle), 0.25 * math.sin(angle))
+        for i in range(5):
+            angle = 2 * math.pi * i / 5
+            self.choreographer.table_map.set_seat_xy(
+                N + i, 0.10 * math.cos(angle), 0.10 * math.sin(angle))
         
         # Load Stylesheet
         self.load_stylesheet()
@@ -178,33 +209,131 @@ class MainWindow(QMainWindow):
         self.log_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         left_layout.addWidget(self.log_area)
         
-        # Test Controls (Bottom of Left Panel)
-        controls_group = QWidget()
-        controls_layout = QHBoxLayout(controls_group)
-        controls_layout.setContentsMargins(0,0,0,0)
-        
+        # === Action controls (real betting) ===
+        action_group = QWidget()
+        action_layout = QHBoxLayout(action_group)
+        action_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.btn_fold = QPushButton("Fold")
+        self.btn_fold.clicked.connect(lambda: self._submit_action(ActionType.FOLD))
+        action_layout.addWidget(self.btn_fold)
+
+        self.btn_check = QPushButton("Check")
+        self.btn_check.clicked.connect(lambda: self._submit_action(ActionType.CHECK))
+        action_layout.addWidget(self.btn_check)
+
+        self.btn_call = QPushButton("Call")
+        self.btn_call.clicked.connect(lambda: self._submit_action(ActionType.CALL))
+        action_layout.addWidget(self.btn_call)
+
+        self.btn_bet = QPushButton("Bet")
+        self.btn_bet.clicked.connect(lambda: self._submit_action_with_size(ActionType.BET))
+        action_layout.addWidget(self.btn_bet)
+
+        self.btn_raise = QPushButton("Raise")
+        self.btn_raise.clicked.connect(lambda: self._submit_action_with_size(ActionType.RAISE))
+        action_layout.addWidget(self.btn_raise)
+
+        self.btn_all_in = QPushButton("All-In")
+        self.btn_all_in.clicked.connect(lambda: self._submit_action(ActionType.ALL_IN))
+        action_layout.addWidget(self.btn_all_in)
+
+        left_layout.addWidget(action_group)
+
+        # === Bet sizing row ===
+        sizing_group = QWidget()
+        sizing_layout = QHBoxLayout(sizing_group)
+        sizing_layout.setContentsMargins(0, 0, 0, 0)
+
+        sizing_layout.addWidget(QLabel("Size:"))
+        self.bet_size_spinbox = QSpinBox()
+        self.bet_size_spinbox.setRange(1, 9999)
+        self.bet_size_spinbox.setValue(2)  # Default to BB
+        self.bet_size_spinbox.setFixedWidth(80)
+        sizing_layout.addWidget(self.bet_size_spinbox)
+
+        for label, fn in [
+            ("½ pot", lambda: self._set_bet_size_fraction(0.5)),
+            ("Pot", lambda: self._set_bet_size_fraction(1.0)),
+            ("2× pot", lambda: self._set_bet_size_fraction(2.0)),
+            ("All-in", self._set_bet_size_all_in),
+        ]:
+            btn = QPushButton(label)
+            btn.clicked.connect(fn)
+            sizing_layout.addWidget(btn)
+
+        left_layout.addWidget(sizing_group)
+
+        # === Debug controls (collapsed under a separator) ===
+        debug_group = QGroupBox("Debug")
+        debug_group.setCheckable(True)
+        debug_group.setChecked(False)
+        debug_outer_layout = QVBoxLayout(debug_group)
+        debug_outer_layout.setContentsMargins(4, 4, 4, 4)
+        debug_outer_layout.setSpacing(4)
+
+        debug_row1 = QHBoxLayout()
+        debug_row1.setContentsMargins(0, 0, 0, 0)
+
         self.btn_start_hand = QPushButton("Start Hand")
         self.btn_start_hand.clicked.connect(self.start_hand_test)
-        controls_layout.addWidget(self.btn_start_hand)
-        
+        debug_row1.addWidget(self.btn_start_hand)
+
         self.btn_bet_test = QPushButton("Test Bet")
         self.btn_bet_test.clicked.connect(self.bet_test)
-        controls_layout.addWidget(self.btn_bet_test)
+        debug_row1.addWidget(self.btn_bet_test)
 
         self.btn_toggle_detection = QPushButton("Toggle Card Detection")
         self.btn_toggle_detection.clicked.connect(self.toggle_card_detection)
-        controls_layout.addWidget(self.btn_toggle_detection)
+        debug_row1.addWidget(self.btn_toggle_detection)
 
-        # Simulation controls
-        self.btn_start_sim = QPushButton("Start Simulation")
+        self.btn_start_sim = QPushButton("Start Sim")
         self.btn_start_sim.clicked.connect(self.start_simulation)
-        controls_layout.addWidget(self.btn_start_sim)
+        debug_row1.addWidget(self.btn_start_sim)
 
-        self.btn_stop_sim = QPushButton("Stop Simulation")
+        self.btn_stop_sim = QPushButton("Stop Sim")
         self.btn_stop_sim.clicked.connect(self.stop_simulation)
-        controls_layout.addWidget(self.btn_stop_sim)
+        debug_row1.addWidget(self.btn_stop_sim)
 
-        left_layout.addWidget(controls_group)
+        debug_outer_layout.addLayout(debug_row1)
+
+        # Arm choreography manual triggers (bypass the queue).
+        debug_row2 = QHBoxLayout()
+        debug_row2.setContentsMargins(0, 0, 0, 0)
+
+        self.btn_home = QPushButton("Home")
+        self.btn_home.clicked.connect(lambda: self.choreographer.home())
+        debug_row2.addWidget(self.btn_home)
+
+        self.btn_pick_up_deck = QPushButton("Pick Up Deck")
+        self.btn_pick_up_deck.clicked.connect(lambda: self.choreographer.pick_up_deck())
+        debug_row2.addWidget(self.btn_pick_up_deck)
+
+        self.deal_seat_spin = QSpinBox()
+        self.deal_seat_spin.setRange(0, max(0, self._num_players - 1))
+        self.deal_seat_spin.setFixedWidth(50)
+        self.btn_deal_to_seat = QPushButton("Deal to Seat")
+        self.btn_deal_to_seat.clicked.connect(
+            lambda: self.choreographer.deal_card_to_seat(self.deal_seat_spin.value()))
+        debug_row2.addWidget(self.btn_deal_to_seat)
+        debug_row2.addWidget(self.deal_seat_spin)
+
+        self.flip_card_spin = QSpinBox()
+        self.flip_card_spin.setRange(0, 4)
+        self.flip_card_spin.setFixedWidth(50)
+        self.btn_flip_card = QPushButton("Flip Card")
+        self.btn_flip_card.clicked.connect(
+            lambda: self.choreographer.flip_card(self._num_players + self.flip_card_spin.value()))
+        debug_row2.addWidget(self.btn_flip_card)
+        debug_row2.addWidget(self.flip_card_spin)
+
+        self.btn_collect_pot = QPushButton("Collect Pot")
+        self.btn_collect_pot.clicked.connect(lambda: self.choreographer.collect_pot())
+        debug_row2.addWidget(self.btn_collect_pot)
+
+        debug_outer_layout.addLayout(debug_row2)
+
+        left_layout.addWidget(debug_group)
 
         # Right Panel (Camera Feed)
         right_panel = QWidget()
@@ -240,12 +369,22 @@ class MainWindow(QMainWindow):
         fps_layout.addWidget(self.mode_label)
         right_layout.addWidget(fps_container)
 
+        # Choreographer status
+        self.sequence_status_label = QLabel("")
+        self.sequence_status_label.setAlignment(Qt.AlignCenter)
+        self.sequence_status_label.setStyleSheet("font-weight: bold; color: #88CCFF;")
+        right_layout.addWidget(self.sequence_status_label)
+
+        self.sequence_rejection_label = QLabel("")
+        self.sequence_rejection_label.setAlignment(Qt.AlignCenter)
+        self.sequence_rejection_label.setStyleSheet("font-weight: bold; color: #FF5555;")
+        right_layout.addWidget(self.sequence_rejection_label)
+
         # Feed Container — OAK-D Lite primary feed (expands to fill available space)
         self.camera_feed = QLabel("Camera Feed Placeholder")
         self.camera_feed.setObjectName("cameraFeed")
         self.camera_feed.setAlignment(Qt.AlignCenter)
         self.camera_feed.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
-        self.camera_feed.setScaledContents(True)
         self.camera_feed.setStyleSheet("background-color: #111; border: 1px solid #333;")
         right_layout.addWidget(self.camera_feed, 1)
 
@@ -259,7 +398,6 @@ class MainWindow(QMainWindow):
         self.chip_feed.setObjectName("cameraFeed")
         self.chip_feed.setAlignment(Qt.AlignCenter)
         self.chip_feed.setFixedHeight(180)
-        self.chip_feed.setScaledContents(True)
         self.chip_feed.setStyleSheet("background-color: #111; border: 1px solid #333;")
         right_layout.addWidget(self.chip_feed)
 
@@ -267,6 +405,12 @@ class MainWindow(QMainWindow):
         self.chip_result_label.setObjectName("infoLabel")
         self.chip_result_label.setAlignment(Qt.AlignCenter)
         right_layout.addWidget(self.chip_result_label)
+
+        self._last_birdseye_frame_time: float = 0.0
+        self._last_chip_frame_time: float = 0.0
+        self._no_signal_timer = QTimer(self)
+        self._no_signal_timer.timeout.connect(self._check_no_signal)
+        self._no_signal_timer.start(1000)  # 1Hz
 
         # Add panels to splitter with initial ratio (30% left, 70% right)
         self.splitter.addWidget(left_panel)
@@ -282,10 +426,28 @@ class MainWindow(QMainWindow):
         
         # Connect Game Signals to UI Updates
         self.game_state.on_phase_change.connect(self.on_phase_change)
+        self.game_state.on_hand_started.connect(self._on_hand_started)
         self.game_state.on_pot_change.connect(self.on_pot_change)
         self.game_state.on_card_detection_required.connect(self.on_cards_updated)
         self.game_state.on_turn_change.connect(self.on_turn_change)
-        
+        self.game_state.on_player_action.connect(lambda _action: self.update_player_list())
+        self.game_state.on_turn_change.connect(lambda _player: self.update_player_list())
+        self.game_state.on_pot_change.connect(lambda _total: self.update_player_list())
+        self.game_state.on_hand_started.connect(self.update_player_list)
+        self.game_state.on_action_rejected.connect(self._on_action_rejected)
+
+        # GameState orchestration hooks for the choreography queue.
+        self.game_state.on_dealing_required.connect(self._on_dealing_required)
+        self.game_state.on_community_flip_required.connect(self._on_community_flip_required)
+        self.game_state.on_pot_collection_required.connect(self._on_pot_collection_required)
+        self.game_state.on_hand_started.connect(self._reset_community_flip_counter)
+
+        # Choreographer status surfacing.
+        self.choreographer.sequence_started.connect(self._on_sequence_started)
+        self.choreographer.sequence_step.connect(self._on_sequence_step)
+        # Queue dispatch handler wired at ~line 85; both fire intentionally
+        self.choreographer.sequence_finished.connect(self._on_sequence_finished_status)
+
         # Connect Vision Controller Signals
         self.vision_controller.frame_ready.connect(self.update_frame)
         self.vision_controller.cards_detected.connect(self._on_cards_detected)
@@ -297,6 +459,15 @@ class MainWindow(QMainWindow):
         
         # Initial FPS setting
         self.fps_spinbox.valueChanged.connect(self.vision_controller.set_fps)
+
+        self.game_state.on_player_action.connect(lambda _a: self._update_button_states())
+        self.game_state.on_turn_change.connect(lambda _p: self._update_button_states())
+        self.game_state.on_pot_change.connect(lambda _t: self._update_button_states())
+        self.game_state.on_phase_change.connect(lambda _ph: self._update_button_states())
+        self.game_state.on_hand_started.connect(self._update_button_states)
+
+        # Initial button-state evaluation
+        self._update_button_states()
 
     def start_hand_test(self):
         """Manually trigger a new hand."""
@@ -323,6 +494,63 @@ class MainWindow(QMainWindow):
                 self.log_message(f"Error: {e}")
             self.update_player_list()
 
+    def _submit_action(self, action_type: ActionType):
+        """Submit an action for the current player to GameState."""
+        player = self.game_state.current_player
+        if player is None:
+            self._on_action_rejected("No current player")
+            return
+        action = Action(player.player_id, action_type, 0)
+        self.game_state.process_action(action)
+
+    def _submit_action_with_size(self, action_type: ActionType):
+        player = self.game_state.current_player
+        if player is None:
+            self._on_action_rejected("No current player")
+            return
+        amount = self.bet_size_spinbox.value()
+        action = Action(player.player_id, action_type, amount)
+        self.game_state.process_action(action)
+
+    def _update_button_states(self):
+        """Enable/disable action buttons based on current GameState."""
+        player = self.game_state.current_player
+        in_hand = player is not None and player.status == PlayerStatus.ACTIVE
+        current_bet = self.game_state.current_bet_amount
+        my_bet = player.current_bet if player else 0
+
+        # Fold always available when it's your turn
+        self.btn_fold.setEnabled(in_hand)
+        # Check only when no bet to call
+        self.btn_check.setEnabled(in_hand and my_bet >= current_bet)
+        # Call only when there is a bet to call
+        self.btn_call.setEnabled(in_hand and my_bet < current_bet)
+        # Bet only when no current bet (otherwise it's a raise)
+        self.btn_bet.setEnabled(in_hand and current_bet == 0)
+        # Raise only when there is a bet to raise
+        self.btn_raise.setEnabled(in_hand and current_bet > 0)
+        # All-in always available when it's your turn (and you have chips)
+        self.btn_all_in.setEnabled(in_hand and player.stack.total > 0)
+
+        # Sim controls: enable Start when no sim, Stop when sim running
+        self.btn_start_sim.setEnabled(self.sim_process is None)
+        self.btn_stop_sim.setEnabled(self.sim_process is not None)
+
+    def _set_bet_size_fraction(self, frac: float):
+        pot = self.game_state.pot.total
+        size = max(1, int(pot * frac))
+        self.bet_size_spinbox.setValue(size)
+
+    def _set_bet_size_all_in(self):
+        player = self.game_state.current_player
+        if player is None:
+            return
+        self.bet_size_spinbox.setValue(player.stack.total)
+
+    def _on_action_rejected(self, reason: str):
+        """Engine-level validation feedback."""
+        self.log_message(f"[Action rejected] {reason}")
+
     def toggle_card_detection(self):
         """Toggle between CARD_READING and IDLE vision modes."""
         if self.vision_controller.mode == VisionMode.CARD_READING:
@@ -347,11 +575,26 @@ class MainWindow(QMainWindow):
         self.player_list.clear()
         for p in self.game_state.players:
             self.player_list.addItem(str(p))
+            item = self.player_list.item(self.player_list.count() - 1)
+            if p == self.game_state.current_player:
+                item.setBackground(QBrush(QColor("#264F4F")))
+            if p.status == PlayerStatus.FOLDED:
+                item.setForeground(QBrush(QColor("#888888")))
+            elif p.status == PlayerStatus.ALL_IN:
+                item.setForeground(QBrush(QColor("#FFAA00")))
 
     def on_phase_change(self, phase: GamePhase):
         self.phase_label.setText(f"Phase: {phase.name}")
         self.log_message(f"Game Phase: {phase.name}")
         self.update_player_list()
+
+    def _on_hand_started(self):
+        """Clear card slots and chip-result label at the start of every hand."""
+        for slot in self.card_slots:
+            slot.load(b"")
+            slot.setStyleSheet(self.config.card_slot.empty_style)
+        self.chip_result_label.setText("Chip stack: —")
+        self.log_message("--- New hand ---")
 
     def start_simulation(self):
         """Start the ROS2/Gazebo simulation by launching the bringup launch file.
@@ -467,22 +710,61 @@ class MainWindow(QMainWindow):
         self.log_area.append(message)
 
     def update_frame(self, frame: np.ndarray):
-        """Updates the primary (OAK-D) camera feed. Triggered by frame_ready."""
-        if frame is not None:
-            qt_img = convert_cv_qt(frame)
-            self.camera_feed.setPixmap(qt_img)
+        """Updates the OAK-D feed, preserving aspect ratio."""
+        if frame is None:
+            return
+        self._last_birdseye_frame_time = datetime.now().timestamp()
+        qt_img = convert_cv_qt(frame)
+        scaled = qt_img.scaled(
+            self.camera_feed.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        self.camera_feed.setPixmap(scaled)
 
     def _update_chip_feed(self, frame: np.ndarray):
-        """Updates the chip camera feed. Triggered by chip_frame_ready."""
-        if frame is not None:
-            qt_img = convert_cv_qt(frame)
-            self.chip_feed.setPixmap(qt_img)
+        """Updates the C925e feed, preserving aspect ratio."""
+        if frame is None:
+            return
+        self._last_chip_frame_time = datetime.now().timestamp()
+        qt_img = convert_cv_qt(frame)
+        scaled = qt_img.scaled(
+            self.chip_feed.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        self.chip_feed.setPixmap(scaled)
+
+    def _check_no_signal(self):
+        """Paint a 'no signal' fallback when a feed has been silent for >1.5s."""
+        now = datetime.now().timestamp()
+        STALE_S = 1.5
+        if now - self._last_birdseye_frame_time > STALE_S:
+            self._paint_no_signal(self.camera_feed, "OAK-D")
+        if now - self._last_chip_frame_time > STALE_S:
+            self._paint_no_signal(self.chip_feed, "C925e")
+
+    def _paint_no_signal(self, label, name: str):
+        """Render a black QPixmap with centred 'No signal: NAME' text."""
+        size = label.size()
+        if size.width() <= 0 or size.height() <= 0:
+            return
+        pix = QPixmap(size)
+        pix.fill(QColor("#111111"))
+        painter = QPainter(pix)
+        painter.setPen(QColor("#FF4444"))
+        font = QFont()
+        font.setPointSize(14)
+        font.setBold(True)
+        painter.setFont(font)
+        painter.drawText(pix.rect(), Qt.AlignCenter, f"No signal: {name}")
+        painter.end()
+        label.setPixmap(pix)
 
     def _on_chips_detected(self, result: dict):
         """Updates the chip stack label. Triggered by chips_detected on total change."""
         stack = result.get("stack")
         if stack is not None:
             self.chip_result_label.setText(f"Chip stack: {stack.total}")
+
+    def _on_button_press(self, seat: int):
+        """Handle physical button press: advance turn in GameState."""
+        self.game_state.next_turn()
+        self.log_message(f"[Button] Turn advance (seat hint={seat})")
 
     def _on_arm_connection_changed(self, available: bool):
         status = "Connected" if available else "Disconnected"
@@ -498,6 +780,66 @@ class MainWindow(QMainWindow):
         """Log the terminal status of a multi-step arm sequence."""
         status = "OK" if success else "FAILED"
         self.log_message(f"Sequence '{name}': {status}")
+        if success:
+            self._dispatch_next_sequence()
+        else:
+            # On failure: drop pending sequences and force the pump off so a
+            # held card is released. The status label is updated separately
+            # by ``_on_sequence_finished_status``.
+            self._sequence_queue.clear()
+            try:
+                self.table_io_bridge.set_pump(False)
+            except Exception:
+                pass
+
+    def _dispatch_next_sequence(self):
+        """Pop and invoke the next queued sequence factory, if any."""
+        if not self._sequence_queue:
+            return
+        next_call = self._sequence_queue.pop(0)
+        next_call()
+
+    def _on_dealing_required(self, active_seats: list, cards_per_seat: int):
+        """Build the dealing queue: pick_up_deck, deal_to_seat per card per seat."""
+        for _round in range(cards_per_seat):
+            for seat in active_seats:
+                self._sequence_queue.append(lambda: self.choreographer.pick_up_deck())
+                self._sequence_queue.append(
+                    lambda s=seat: self.choreographer.deal_card_to_seat(s))
+        self._dispatch_next_sequence()
+
+    def _on_community_flip_required(self, count: int):
+        """Append flips for the next ``count`` un-flipped community cards."""
+        base = self._next_community_to_flip
+        for i in range(count):
+            seat_index = self._num_players + base + i
+            self._sequence_queue.append(
+                lambda s=seat_index: self.choreographer.flip_card(s))
+        self._next_community_to_flip += count
+        self._dispatch_next_sequence()
+
+    def _on_pot_collection_required(self, winner_seat: int):
+        """Queue a pot collection sequence for the winning seat."""
+        # winner_seat is informational; collect_pot reads pot_xy from TableMap directly
+        self._sequence_queue.append(lambda: self.choreographer.collect_pot())
+        self._dispatch_next_sequence()
+
+    def _reset_community_flip_counter(self):
+        """Reset the community-card flip cursor at the start of every hand."""
+        self._num_players = len(self.game_state.players)
+        self._next_community_to_flip = 0
+
+    def _on_sequence_started(self, name: str):
+        self.sequence_status_label.setText(f"Sequence: {name} (step 0)")
+        self.sequence_rejection_label.setText("")
+
+    def _on_sequence_step(self, name: str, idx: int):
+        self.sequence_status_label.setText(f"Sequence: {name} (step {idx})")
+
+    def _on_sequence_finished_status(self, name: str, success: bool):
+        self.sequence_status_label.setText("")
+        if not success:
+            self.sequence_rejection_label.setText(f"Last rejection: {name}")
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_B:
@@ -554,6 +896,10 @@ class MainWindow(QMainWindow):
 
         self.vision_controller.stop()
         self.arm_bridge.shutdown()
+        try:
+            self.table_io_bridge.shutdown()
+        except Exception:
+            pass
         event.accept()
 
     def load_stylesheet(self):

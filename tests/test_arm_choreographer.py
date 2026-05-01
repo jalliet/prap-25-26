@@ -162,22 +162,24 @@ class TestArmChoreographer(unittest.TestCase):
         bridge.ack(True)
         self.assertFalse(choreo.is_busy)
 
-    def test_deal_card_runs_three_pose_steps_in_order(self):
+    def test_deal_card_runs_four_steps_in_order(self):
         bridge, tm, choreo = self._make()
         tm.set_seat_xy(2, 0.30, 0.20)
 
         starts: list[str] = []
         steps: list[tuple] = []
         finished: list[tuple] = []
+        pumps: list[bool] = []
         choreo.sequence_started.connect(starts.append)
         choreo.sequence_step.connect(lambda n, i: steps.append((n, i)))
         choreo.sequence_finished.connect(
             lambda n, ok: finished.append((n, ok)))
+        choreo.pump_requested.connect(pumps.append)
 
         choreo.deal_card_to_seat(2)
         self.assertEqual(starts, ["deal_card_to_seat_2"])
 
-        # Step 1 of 3: hover above the drop point.
+        # Step 1 of 4: hover above the drop point.
         self.assertEqual(len(bridge.calls), 1)
         kind, args, _ = bridge.calls[0]
         self.assertEqual(kind, "pose")
@@ -188,24 +190,32 @@ class TestArmChoreographer(unittest.TestCase):
             args[2], choreo.config.drop_z + choreo.config.hover_dz)
         bridge.ack(True)
 
-        # Step 2 of 3: descend to drop_z.
+        # Step 2 of 4: descend to drop_z.
         self.assertEqual(len(bridge.calls), 2)
         _, args, _ = bridge.calls[1]
         self.assertAlmostEqual(args[2], choreo.config.drop_z)
         bridge.ack(True)
 
-        # Step 3 of 3: lift back up.
+        # Step 3 of 4: pump-off. No bridge call; the choreographer waits on
+        # an external completion signal that MainWindow normally relays from
+        # the bridge. Fire it directly to advance.
+        self.assertEqual(len(bridge.calls), 2)
+        self.assertEqual(pumps, [False])
+        choreo._on_pump_done(False)
+
+        # Step 4 of 4: lift back up.
         self.assertEqual(len(bridge.calls), 3)
         _, args, _ = bridge.calls[2]
         self.assertAlmostEqual(
             args[2], choreo.config.drop_z + choreo.config.hover_dz)
         bridge.ack(True)
 
-        # Sequence terminated successfully on the third ack.
+        # Sequence terminated successfully on the final ack.
         self.assertEqual(steps, [
             ("deal_card_to_seat_2", 0),
             ("deal_card_to_seat_2", 1),
             ("deal_card_to_seat_2", 2),
+            ("deal_card_to_seat_2", 3),
         ])
         self.assertEqual(finished, [("deal_card_to_seat_2", True)])
         self.assertFalse(choreo.is_busy)

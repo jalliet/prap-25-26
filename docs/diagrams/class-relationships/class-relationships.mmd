@@ -3,6 +3,7 @@ classDiagram
         +game_state: GameState
         +vision_controller: VisionController
         +arm_bridge: ArmRosBridge
+        +choreographer: ArmChoreographer
         +sim_process: Popen
         +start_simulation()
         +stop_simulation()
@@ -39,11 +40,21 @@ classDiagram
         +pot: ChipStack
         +community_cards: List~Card~
         +deck: Deck
+        +blinds: BlindStructure
         +start_new_hand()
         +process_action(action)
         +next_turn()
+        +update_pot(stack: ChipStack)
+        -_post_blinds()
+        -_jump_to_showdown()
+        -_award_pot_at_showdown()
         on_phase_change: Signal
         on_pot_change: Signal
+        on_action_rejected: Signal
+        on_dealing_required: Signal
+        on_community_flip_required: Signal
+        on_pot_collection_required: Signal
+        on_hand_started: Signal
     }
 
     class BaseDetector~T~ {
@@ -73,8 +84,55 @@ classDiagram
         +name: str
         +stack: ChipStack
         +status: PlayerStatus
+        +total_committed: int
         +fold()
-        +bet(amount) int
+        +bet(amount: int) ChipStack
+        +collect_winnings(stack: ChipStack)
+    }
+
+    class BlindStructure {
+        +small_blind: int
+        +big_blind: int
+    }
+
+    class TableIoBridge {
+        &lt;&lt;Singleton&gt;&gt;
+        +pump_duration_s: float
+        +set_pump(state: bool)
+        turn_advance_requested: Signal
+        pump_state_set: Signal
+    }
+
+    class ArmChoreographer {
+        +table_map: TableMap
+        +config: TableConfig
+        +arm_bridge: ArmRosBridge
+        +home()
+        +pick_up_deck()
+        +deal_card_to_seat(seat)
+        +flip_card(idx)
+        +collect_pot()
+        -_on_pump_done(state: bool)
+        sequence_started: Signal
+        sequence_step: Signal
+        sequence_finished: Signal
+        pump_requested: Signal
+    }
+
+    class TableMap {
+        +deck_xy: tuple
+        +pot_xy: tuple
+        +seats: dict
+        +set_seat_xy(idx, x, y)
+        +set_deck_xy(x, y)
+        +set_pot_xy(x, y)
+    }
+
+    class TableConfig {
+        +z_pickup: float
+        +z_travel: float
+        +pitch: float
+        +roll: float
     }
 
     class ChipStack {
@@ -92,6 +150,11 @@ classDiagram
     MainWindow --> VisionController
     MainWindow --> ArmRosBridge
     MainWindow --> GameState
+    MainWindow --> TableIoBridge
+    MainWindow *-- ArmChoreographer
+    ArmChoreographer *-- TableMap
+    ArmChoreographer *-- TableConfig
+    ArmChoreographer ..> ArmRosBridge : move_pose / move_joints
     VisionController --> BirdseyeService
     VisionController --> CardDetector
     VisionController --> ChipSegmentor
@@ -100,4 +163,7 @@ classDiagram
     GameState --> Player
     GameState --> Card
     GameState --> ChipStack
+    GameState --> BlindStructure
     Player --> ChipStack
+    ArmChoreographer ..> TableIoBridge : pump_requested
+    TableIoBridge ..> ArmChoreographer : pump_state_set

@@ -52,3 +52,9 @@ QListWidget::item:selected {
 QFrame[frameShape="4"] { /* HLine */
     color: #444444;
 }
+
+/* Player list rows: tighter padding for compact view */
+#playerList::item {
+    padding: 4px 6px;
+    border-bottom: 1px solid #333;
+}

@@ -59,7 +59,7 @@ In player mode, the robot arm will be able to pick up cards, play them, and hand
 The PySide6 graphical interface for monitoring the game state and camera feed. See the [GUI Documentation](gui/README.md) for details.
 
 ### Poker Engine
-Core game logic in `poker/` — card/deck management, chip stacks, player state, betting actions, and game phase transitions (Pre-Flop → Showdown).
+Core game logic in `poker/` — card/deck management, chip stacks, player state, betting actions, and game phase transitions (Pre-Flop → Showdown). Hand evaluation uses the `phevaluator` library (`poker/evaluator.py`); side pots are computed via a capped-contribution algorithm at showdown.
 
 ### Vision System
 Dual-camera computer vision pipeline using YOLOv8 models:
@@ -101,6 +101,18 @@ bash scripts/start_game.sh
 - **Start/Stop Simulation** — launches or stops the ROS 2 Gazebo simulation (`ros2 launch poker_bringup poker_arm.launch.py mode:=sim`) directly from the GUI.
 - **Start Hand / Test Bet** — manual triggers for testing game state transitions.
 - **Debug Inference (keyboard)** — press **B** to run one-shot card detection on the OAK-D feed and save the annotated frame to `debug_inference/birdseye/`. Press **C** for chip segmentation on the C925e feed, saved to `debug_inference/chip_seg/`. Timestamped PNGs are saved and the path is logged.
+
+#### Betting Controls
+The left panel exposes operator-facing controls for the active player:
+- **Action row** — Fold, Check, Call, Bet, Raise, All-In. Buttons enable or disable based on the current `GameState` (phase, current bet, player status). Invalid actions are routed through the `on_action_rejected` signal and surfaced in the game log.
+- **Sizing row** — `QSpinBox` (clamped to `[min_raise, current_player.stack]`) plus four preset buttons that write into the spin box: 1/2 pot, pot, 2x pot, all-in.
+
+Existing test buttons (`Test Bet`, `Toggle Card Detection`, `Start/Stop Simulation`) live in a Debug group below the real controls.
+
+#### Hardware Integration (pi_hardware modes)
+Under `mode:=pi_hardware` and `mode:=pi_hardware_headless`, the launch file spawns `pump_test` (a ROS 2 GPIO node in `poker_control`) for the table-side button and suction pump:
+- **Table button (GPIO 27)** — RISING-edge increments a seat counter and publishes `Int32` on `/button_count`. The dashboard's `services/table_io_bridge.py` subscribes and calls `GameState.next_turn()` to advance the turn.
+- **Suction pump (GPIO 17)** — `pump_test` subscribes to `/pump_control` (Int32) and toggles GPIO 17 HIGH or LOW based on `msg.data`. `ArmChoreographer` builds pump-on and pump-off steps into its `pick_up_deck` and `deal_card_to_seat` sequences, emitting `pump_requested(bool)` at each pump step. `MainWindow` routes that signal to `TableIoBridge.set_pump`, which publishes `Int32(1)` or `Int32(0)` on `/pump_control` and signals `pump_state_set(bool)` once the `pump_duration_s` settle delay (default 0.05) elapses. The choreographer waits on `pump_state_set` before moving past the pump step. Physical chip movement stays manual.
 
 ### With ROS 2 Simulation
 Requires ROS 2 Jazzy and a built workspace.
@@ -172,6 +184,19 @@ Requires `npx` (Node.js). Output goes to `docs/diagrams/output/`.
 | Red    | 1     |
 | Blue   | 5     |
 | White  | 20    |
+
+### Choreographer Status in the GUI
+
+The dashboard surfaces choreographer state through two read-only labels at the top of the right (camera) panel:
+- **`sequence_status_label`** shows the active sequence name and the current step index (for example `Sequence: pick_up_deck (step 2)`), or empty when no sequence is running.
+- **`sequence_rejection_label`** displays the most recent rejection reason from the choreographer (for example `Last rejection: pick_up_deck`) so operators can see why a sequence was refused.
+
+Manual triggers live in the Debug QGroupBox on the left panel for integration testing without `GameState` driving the queue:
+- **Home** button calls `choreographer.home()`.
+- **Pick Up Deck** button calls `choreographer.pick_up_deck()`.
+- **Deal to Seat** button with a seat-index QSpinBox calls `choreographer.deal_card_to_seat(seat)`.
+- **Flip Card** button with a community-index QSpinBox (0..4) calls `choreographer.flip_card(num_players + i)`.
+- **Collect Pot** button calls `choreographer.collect_pot()`.
 
 ---
 
