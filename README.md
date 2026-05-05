@@ -91,6 +91,7 @@ source ~/poker_arm_ws/.venv/bin/activate
 
 > **Tip:** Add both lines to your `~/.bashrc` so they run automatically:
 > ```bash
+> source /opt/ros/jazzy/setup.bash
 > source ~/poker_arm_ws/.venv/bin/activate
 > source ~/poker_arm_ws/install/setup.bash
 > ```
