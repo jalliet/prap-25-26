@@ -7,51 +7,117 @@ In player mode, the robot arm will be able to pick up cards, play them, and hand
 
 ### Prerequisites
 
+*   **OS**: Ubuntu 22.04/24.04 or Raspberry Pi OS (Bookworm). WSL2 is fine for dashboard/simulation testing, but hardware USB/serial access can be difficult.
 *   **Python 3.12** (Required)
-    *   We recommend using [pyenv](https://github.com/pyenv/pyenv) to manage python versions.
-*   **Hardware**: Raspberry Pi 5 (8GB RAM) running Raspberry Pi OS (Bookworm).
+    *   We recommend using [pyenv](https://github.com/pyenv/pyenv) to manage Python versions.
+*   **ROS 2 Jazzy** (Required for simulation or arm control)
+*   **Hardware**: Raspberry Pi 5 (8GB RAM) for Pi hardware modes.
 *   **Cameras**: OAK-D Lite (birdseye card detection) + Logitech C925e (chip segmentation)
 *   **Robot Arm**: SO101 6-DOF servo arm (optional, for arm control).
 
+### ROS 2 System Packages
+
+Install these before building the ROS workspace. They cover rosdep, colcon, Python venv support, Qt's xcb cursor dependency, Gazebo integration, controller packages, and the joint-state GUI:
+
+```bash
+sudo apt update
+sudo apt install python3-pip python3-rosdep python3-venv python3-colcon-common-extensions libxcb-cursor0 \
+  ros-jazzy-gz-ros2-control \
+  ros-jazzy-ros2-controllers \
+  ros-jazzy-joint-state-publisher-gui
+```
+
+Initialise rosdep once per machine, then install package dependencies from the workspace:
+
+```bash
+sudo rosdep init  # Skip if rosdep is already initialised
+rosdep update
+```
+
 ### Installation
 
-1.  **Clone the repository**:
+The repository is itself the ROS 2 workspace root: `build.sh`, `requirements.txt`, and `src/` should all be in the same directory.
+
+1.  **Create a workspace directory and clone the repository**:
 
     Using HTTPS:
     ```bash
-    git clone https://github.com/jalliet/prap-25-26.git
-    cd prap-25-26
+    mkdir -p ~/poker_arm_ws
+    cd ~/poker_arm_ws
+    git clone https://github.com/jalliet/prap-25-26.git .
     ```
 
     Using SSH:
     ```bash
-    git clone git@github.com:jalliet/prap-25-26.git
-    cd prap-25-26
+    mkdir -p ~/poker_arm_ws
+    cd ~/poker_arm_ws
+    git clone git@github.com:jalliet/prap-25-26.git .
     ```
 
-2.  **Create a Virtual Environment**:
+2.  **Install ROS package dependencies**:
+
+    ```bash
+    source /opt/ros/jazzy/setup.bash
+    rosdep install --from-paths src --ignore-src -r -y
+    ```
+
+3.  **Create a virtual environment**:
 
     Using standard python (ensure it is 3.12):
     ```bash
-    python3.12 -m venv venv
+    python3.12 -m venv .venv
     ```
 
     OR using pyenv:
     ```bash
     pyenv install 3.12
     pyenv local 3.12
-    python -m venv venv
+    python -m venv .venv
     ```
 
-3.  **Activate the Virtual Environment**:
+4.  **Activate the virtual environment**:
     ```bash
-    source venv/bin/activate
+    source .venv/bin/activate
     ```
 
-4.  **Install Dependencies**:
+5.  **Install Python dependencies**:
     ```bash
     pip install -r requirements.txt
     ```
+
+6.  **Build the ROS 2 workspace**:
+
+    Always use `./build.sh` instead of calling `colcon build` directly. The script runs `colcon build --symlink-install` and patches generated ROS Python entry points so they use the workspace `.venv` interpreter. Without this, ROS nodes can fail with `ModuleNotFoundError` for venv packages such as `casadi` or `PySide6`.
+
+    ```bash
+    source /opt/ros/jazzy/setup.bash
+    ./build.sh
+    source install/setup.bash
+    ```
+
+    You can pass colcon flags through the wrapper:
+
+    ```bash
+    ./build.sh --packages-select poker_control
+    ```
+
+7.  **Generate and verify kinematic models**:
+
+    Run this once after the first build, and again whenever the DH parameters or kinematics code changes.
+
+    ```bash
+    ros2 run poker_control generate_kinematics
+    ros2 run poker_control test_kinematics
+    ```
+
+For each new terminal, reactivate the environment before running the dashboard or any ROS command:
+
+```bash
+cd ~/poker_arm_ws
+source .venv/bin/activate
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+```
 
 ## Components
 
@@ -119,9 +185,12 @@ Requires ROS 2 Jazzy and a built workspace.
 
 ```bash
 # Source ROS 2 and build the workspace (once)
+cd ~/poker_arm_ws
+source .venv/bin/activate
 source /opt/ros/jazzy/setup.bash
-colcon build
+./build.sh
 source install/setup.bash
+ros2 run poker_control generate_kinematics
 
 # Option 1: Launch simulation from the GUI
 python main.py
