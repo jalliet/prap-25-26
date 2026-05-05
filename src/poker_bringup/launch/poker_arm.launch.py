@@ -86,7 +86,19 @@ def generate_launch_description():
         )
     )
 
-    # --- 6. Controller Spawners (Gazebo Controllers) ---
+    # --- 6. Poker GPIO (Pi GPIO) ---
+    # Runs on Raspberry Pi modes only. The pump is controlled by /pump_control
+    # and button presses are published on /button_count.
+    poker_gpio_node = Node(
+        package='poker_gpio',
+        executable='poker_gpio',
+        output='screen',
+        condition=IfCondition(
+            PythonExpression(["'", mode, "' in ['pi_hardware', 'pi_hardware_headless'] and '", dashboard_only, "' == 'false'"])
+        )
+    )
+
+    # --- 7. Controller Spawners (Gazebo Controllers) ---
     # Activate the controllers in Gazebo (Needed whenever Gazebo runs)
     joint_state_broadcaster = Node(
         package='controller_manager',
@@ -106,7 +118,7 @@ def generate_launch_description():
         )
     )
 
-    # --- 7. Robot State Publisher (Hardware Modes) ---
+    # --- 8. Robot State Publisher (Hardware Modes) ---
     # In Sim, this is handled by so101_gazebo.launch.py.
     # In Hardware, we need to run it manually.
     
@@ -131,6 +143,7 @@ def generate_launch_description():
         controller_node,
         driver_node,
         sim_bridge_node,
+        poker_gpio_node,
         joint_state_broadcaster,
         forward_position_controller, 
         robot_state_publisher

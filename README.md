@@ -205,10 +205,26 @@ ros2 launch poker_bringup poker_arm.launch.py mode:=sim
 
 Optimised for embedded systems (e.g. Raspberry Pi) without a display.
 
-* **Nodes:** Controller, Hardware Driver
+* **Nodes:** Controller, Hardware Driver, Poker GPIO bridge
 
 ```bash
 ros2 launch poker_bringup poker_arm.launch.py mode:=pi_hardware_headless
+```
+
+The `poker_gpio` node runs on Raspberry Pi modes and uses GPIO 27 for the pump
+control circuit and GPIO 17 for the button. The pump output is active-low:
+GPIO 27 is driven high by default so the pump stays off, and driven low when
+the pump is commanded on.
+
+Pump commands:
+```bash
+ros2 topic pub --once /pump_control std_msgs/msg/Int32 "{data: 1}"
+ros2 topic pub --once /pump_control std_msgs/msg/Int32 "{data: 0}"
+```
+
+Button presses publish the circular count on `/button_count`:
+```bash
+ros2 topic echo /button_count std_msgs/msg/Int32
 ```
 
 ---
@@ -217,7 +233,7 @@ ros2 launch poker_bringup poker_arm.launch.py mode:=pi_hardware_headless
 
 Same as PC hardware mode, explicitly labelled for embedded use.
 
-* **Nodes:** Controller, Hardware Driver, Dashboard
+* **Nodes:** Controller, Hardware Driver, Dashboard, Poker GPIO bridge
 
 ```bash
 ros2 launch poker_bringup poker_arm.launch.py mode:=pi_hardware
