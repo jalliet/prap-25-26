@@ -122,6 +122,18 @@ def generate_launch_description():
         )
     )
 
+    # --- 8. Pump/Button GPIO Node (Pi Hardware Modes Only) ---
+    # Required by the paramiko-bridge dashboard for /button_count and /pump_control.
+    pump_test_node = Node(
+        package='poker_control',
+        executable='pump_test',
+        name='pump_test',
+        parameters=[{'num_players': 3}],
+        condition=IfCondition(
+            PythonExpression(["'", mode, "' in ['pi_hardware', 'pi_hardware_headless']"])
+        ),
+    )
+
     return LaunchDescription([
         mode_arg,
         port_arg,
@@ -132,6 +144,7 @@ def generate_launch_description():
         driver_node,
         sim_bridge_node,
         joint_state_broadcaster,
-        forward_position_controller, 
-        robot_state_publisher
+        forward_position_controller,
+        robot_state_publisher,
+        pump_test_node,
     ])
