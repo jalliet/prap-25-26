@@ -1,6 +1,10 @@
 import os
 import shlex
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 def _env_float(name: str, default: float) -> float:
     raw = os.getenv(name)

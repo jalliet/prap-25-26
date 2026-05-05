@@ -19,3 +19,4 @@ lark
 six
 phevaluator
 paramiko
+python-dotenv
