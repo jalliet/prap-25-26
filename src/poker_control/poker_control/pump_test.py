@@ -7,9 +7,10 @@ Behaviour:
     - Pin 27 (BUTTON_PIN, RISING edge): increments a 1..num_players cycling counter,
       publishes Int32 to /button_count. The bridge in services/table_io_bridge.py
       maps this to a GameState.next_turn() call.
-    - Pin 17 (PUMP_PIN): subscribes to /pump_control (Int32, 1=ON, 0=OFF) and
-      drives the GPIO HIGH/LOW respectively. The bridge publishes 1, then 0
-      after pump_duration_s seconds.
+    - Pin 17 (PUMP_PIN): subscribes to /pump_control (Int32, 1=ON, 0=OFF).
+      Wiring is active-low (relay/MOSFET module): GPIO LOW energises the pump,
+      GPIO HIGH releases it. The bridge publishes 1, then 0 after pump
+      settle delay.
 
 ROS 2 parameters:
     num_players (int, default 3): cycle range for the button counter.
@@ -42,7 +43,7 @@ class PumpTestNode(Node):
         if _GPIO_AVAILABLE:
             GPIO.setmode(GPIO.BCM)
             GPIO.setup(PUMP_PIN, GPIO.OUT)
-            GPIO.output(PUMP_PIN, GPIO.LOW)
+            GPIO.output(PUMP_PIN, GPIO.HIGH)
             GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
             GPIO.add_event_detect(
                 BUTTON_PIN, GPIO.RISING,
@@ -65,10 +66,10 @@ class PumpTestNode(Node):
             self.get_logger().info(f"[stub] pump_control = {msg.data}")
             return
         if msg.data == 1:
-            GPIO.output(PUMP_PIN, GPIO.HIGH)
+            GPIO.output(PUMP_PIN, GPIO.LOW)
             self.get_logger().info("Pump ON")
         elif msg.data == 0:
-            GPIO.output(PUMP_PIN, GPIO.LOW)
+            GPIO.output(PUMP_PIN, GPIO.HIGH)
             self.get_logger().info("Pump OFF")
         else:
             self.get_logger().warn(f"Use only 1 or 0 for pump control (got {msg.data})")
