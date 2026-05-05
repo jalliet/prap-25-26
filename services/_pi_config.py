@@ -16,7 +16,7 @@ PI_HOST = os.getenv("PI_HOST", "pi.local")
 PI_USER = os.getenv("PI_USER", "pi")
 PI_KEY_PATH = os.getenv("PI_KEY_PATH", None)
 PI_PASS = os.getenv("PI_PASS", None)
-WS_PATH = os.getenv("WS_PATH", "~/prap-25-26")
+WS_PATH = os.getenv("WS_PATH", "~/poker_arm_ws")
 ROS_SETUP = os.getenv("ROS_SETUP", "/opt/ros/jazzy/setup.bash")
 PUMP_SETTLE_S = _env_float("PUMP_SETTLE_S", 0.05)
 
