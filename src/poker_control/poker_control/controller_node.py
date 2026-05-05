@@ -22,7 +22,7 @@ class PokerController(Node):
 
         # --- Robot Configuration ---
         self.n_joints = 6
-        self.SERVO_ZERO = [1852, 1848, 501, 1849, 2050, 2015]
+        self.SERVO_ZERO = [1848, 1906, 500, 1859, 2050, 2013]
         self.SERVO_SIGNS = [1] * self.n_joints
         self.STEPS_PER_RAD = 4096.0 / (2.0 * np.pi)
         self.MAX_RPM = 50.0
@@ -31,22 +31,16 @@ class PokerController(Node):
 
         # --- Matrix LQR Design ---
         self.Ts = 0.01
-        q_diag = [5.0] * self.n_joints
-        r_diag = [10.0] * self.n_joints
-        self.Q_mat = np.diag(q_diag)
-        self.R_mat = np.diag(r_diag)
+        q_diag = np.array([10.0] * self.n_joints)
+        r_diag = np.array([50.0] * self.n_joints)
 
-        q_diag_sqrt = np.sqrt(q_diag)
-        Q_sqrt = np.diag(q_diag_sqrt)
-        Q_inv_sqrt = np.diag(1.0 / q_diag_sqrt)
-        I = np.eye(self.n_joints)
+        # Solve scalar DARE per joint (vectorised)
+        disc = np.sqrt(q_diag**2 + (4.0 * q_diag * r_diag) / (self.Ts**2))
+        P_diag = 0.5 * (q_diag + disc)
 
-        R_term = Q_inv_sqrt @ self.R_mat @ Q_inv_sqrt
-        inner_root = np.sqrt(I + (4.0 / self.Ts**2) * R_term)
-        self.P_mat = 0.5 * Q_sqrt @ (I + inner_root) @ Q_sqrt
-
-        inv_term = np.linalg.inv(self.R_mat + (self.Ts**2) * self.P_mat)
-        self.K_mat = self.Ts * inv_term @ self.P_mat
+        # LQR gain per joint
+        K_diag = (self.Ts * P_diag) / (r_diag + (self.Ts**2) * P_diag)
+        self.K_diag = K_diag
 
         # --- Load Kinematics ---
         self.ik_func = None
@@ -213,7 +207,6 @@ class PokerController(Node):
             diff = steps - self.SERVO_ZERO[i]
             self.q_measured[i] = diff / \
                 (self.STEPS_PER_RAD * self.SERVO_SIGNS[i])
-
         self.has_feedback = True
 
         if self.tracking_active and self.current_q_target is not None:
@@ -308,15 +301,15 @@ class PokerController(Node):
                     self.tracking_active = False
 
         if self.has_feedback:
-            e = self.q_measured - q_des
+            e = q_des - self.q_measured
         else:
             e = np.zeros(6)
 
         # Calculate Control Effort
-        K_e = (0.2 * self.K_mat) @ e
+        K_e = self.K_diag * e
 
         # Calculate Speed Limits
-        u_tilde = v_des - K_e
+        u_tilde = v_des + K_e
         cmd_speed = []
         for j in range(self.n_joints):
             u_steps_s = abs(u_tilde[j] * self.STEPS_PER_RAD)
@@ -325,8 +318,7 @@ class PokerController(Node):
             cmd_speed.append(int(limit))
 
         # Calculate Position Command (Hybrid LQR)
-        correction = e - (self.Ts * K_e)
-        q_cmd_rad = q_des_next + correction
+        q_cmd_rad = q_des + (e + self.Ts * K_e)
         cmd_pos = self.rad_to_servo(q_cmd_rad)
         cmd_acc = [4000] * 6
 

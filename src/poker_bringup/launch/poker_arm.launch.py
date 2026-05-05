@@ -106,17 +106,6 @@ def generate_launch_description():
         )
     )
 
-    # --- 6.5 Pump/Button GPIO Node (Pi Hardware Modes Only) ---
-    pump_test_node = Node(
-        package='poker_control',
-        executable='pump_test',
-        name='pump_test',
-        parameters=[{'num_players': 3}],
-        condition=IfCondition(
-            PythonExpression(["'", mode, "' in ['pi_hardware', 'pi_hardware_headless']"])
-        ),
-    )
-
     # --- 7. Robot State Publisher (Hardware Modes) ---
     # In Sim, this is handled by so101_gazebo.launch.py.
     # In Hardware, we need to run it manually.
@@ -143,7 +132,6 @@ def generate_launch_description():
         driver_node,
         sim_bridge_node,
         joint_state_broadcaster,
-        forward_position_controller,
-        robot_state_publisher,
-        pump_test_node
+        forward_position_controller, 
+        robot_state_publisher
     ])

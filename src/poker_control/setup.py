@@ -31,7 +31,6 @@ setup(
             'sim_bridge = poker_control.sim_bridge:main',
             'generate_kinematics = poker_control.generate_kinematics:main',
             'test_kinematics = poker_control.test_kinematics:main',
-            'pump_test = poker_control.pump_test:main',
         ],
     },
 )
