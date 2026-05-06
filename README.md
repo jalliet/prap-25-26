@@ -85,17 +85,18 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Activate the venv every time you open a new terminal before running any `ros2` commands:
+Every new terminal needs your **ROS distro** and this **workspace overlay** (ROS is not sourced automatically when you install it). After the first `./build.sh`, the repo’s helper script can do **venv + overlay** in one step (see **§6**); before that, activate the venv by hand:
+
 ```bash
 source ~/poker_arm_ws/.venv/bin/activate
 ```
 
-> **Tip:** Add both lines to your `~/.bashrc` so they run automatically:
+> **Tip:** Put the ROS line plus `source_ws.sh` in `~/.bashrc` so new shells are ready without manual steps (adjust the distro and path to match your machine):
 > ```bash
 > source /opt/ros/jazzy/setup.bash
-> source ~/poker_arm_ws/.venv/bin/activate
-> source ~/poker_arm_ws/install/setup.bash
+> source ~/poker_arm_ws/source_ws.sh
 > ```
+> That replaces separate `source .venv/bin/activate` and `source install/setup.bash` once the workspace has been built at least once.
 
 ### 5. Build the Workspace
 
@@ -113,7 +114,22 @@ You can pass any `colcon` flags through it:
 
 ### 6. Source the Environment
 
+ROS 2 is not loaded globally: you **`source`** it every shell (or via `~/.bashrc`).
+
+**Recommended (after `./build.sh`):** from the workspace root — the folder may be named anything (`poker_arm_ws`, `demo_ws`, …) as long as `.venv`, `install/`, and `source_ws.sh` sit next to each other:
+
 ```bash
+cd ~/poker_arm_ws
+source /opt/ros/jazzy/setup.bash   # or humble — use the distro you installed
+source ./source_ws.sh
+```
+
+`source_ws.sh` **must be sourced**, not executed (`./source_ws.sh` would run in a subshell and your environment would not change). It activates **`.venv`** and then **`install/setup.bash`**.
+
+**Equivalent by hand:**
+
+```bash
+source .venv/bin/activate
 source install/setup.bash
 ```
 
@@ -243,7 +259,7 @@ The `poker_demo` package runs a scripted **home**, **pick**, **pump**, and **fli
 ros2 launch poker_bringup poker_arm.launch.py mode:=pi_hardware_headless port:=/dev/ttyACM0
 ```
 
-**Terminal 2** — after `./build.sh` (or `colcon build --symlink-install`) and sourcing the workspace (`source install/setup.bash`; use the workspace venv if that is how you run `ros2`):
+**Terminal 2** — after `./build.sh`, with the environment ready (`source /opt/ros/<distro>/setup.bash` and `source ./source_ws.sh`, or the manual venv + `install/setup.bash` pair):
 
 ```bash
 ros2 run poker_demo pick_demo
