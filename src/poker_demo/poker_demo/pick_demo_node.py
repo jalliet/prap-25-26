@@ -86,6 +86,13 @@ class PickDemoNode(Node):
         finally:
             with self._mutex:
                 self._busy = False
+                # If no /button_count arrived during startup spins, prev stays None:
+                # the first press (min→min+1) would only latch and skip the demo for that edge.
+                if self._last_count is None:
+                    self._last_count = self._btn_min
+                    self.get_logger().info(
+                        f'latched button_count={self._btn_min} for edge detection '
+                        '(no prior /button_count during startup)')
             self._startup_done.set()
             if ok:
                 self.get_logger().info('startup sequence finished')
