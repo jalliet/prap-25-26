@@ -11,6 +11,7 @@ The system leverages **CasADi** for high-performance symbolic kinematics (FK, IK
 * [Installation & Setup](#installation--setup)
 * [Quick Start](#quick-start)
 * [Operational Modes](#operational-modes)
+* [Pick-and-flip demo (`poker_demo`)](#pick-and-flip-demo-poker_demo)
 * [The Dashboard](#the-dashboard)
 * [Architecture](#architecture)
 * [Troubleshooting](#troubleshooting)
@@ -212,10 +213,12 @@ Optimised for embedded systems (e.g. Raspberry Pi) without a display.
 ros2 launch poker_bringup poker_arm.launch.py mode:=pi_hardware_headless
 ```
 
-The `poker_gpio` node runs on Raspberry Pi modes and uses GPIO 27 for the pump
-control circuit and GPIO 17 for the button. The pump output is active-low:
-GPIO 27 is driven high by default so the pump stays off, and driven low when
-the pump is commanded on.
+The `poker_gpio` node runs on Raspberry Pi modes and uses BCM **GPIO 22** by
+default for the pump (**`pump_pin`**; override if wired differently). The drive
+is **active-high by default**: **HIGH** turns the pump **on**, **LOW** turns it **off**
+(typical logic-level NMOS gate). GPIO **17** is the button (**`button_pin`**). Use
+`pump_active_low:=true` only if your circuit inverts the logical sense (e.g.
+active-low coupling).
 
 Pump commands:
 ```bash
@@ -226,6 +229,32 @@ ros2 topic pub --once /pump_control std_msgs/msg/Int32 "{data: 0}"
 Button presses publish the circular count on `/button_count`:
 ```bash
 ros2 topic echo /button_count std_msgs/msg/Int32
+```
+
+While the controller is executing a trajectory, `/button_count` does not advance (`poker_gpio` watches `/arm_busy` from `poker_controller`). Press the button **after** motion finishes.
+
+#### Pick-and-flip demo (`poker_demo`)
+
+The `poker_demo` package runs a scripted **home**, **pick**, **pump**, and **flip** sequence that calls the `/move_joints` and `/move_pose` actions and publishes to `/pump_control`. Launch it **in a second terminal** after Pi headless hardware is running; it depends on `/button_count`, `/pump_control`, and `/arm_busy` behaving as described above.
+
+**Terminal 1 (stack):**
+
+```bash
+ros2 launch poker_bringup poker_arm.launch.py mode:=pi_hardware_headless port:=/dev/ttyACM0
+```
+
+**Terminal 2** — after `./build.sh` (or `colcon build --symlink-install`) and sourcing the workspace (`source install/setup.bash`; use the workspace venv if that is how you run `ros2`):
+
+```bash
+ros2 run poker_demo pick_demo
+```
+
+Optional dwell time after commanding the pump on or off:
+
+```bash
+ros2 run poker_demo pick_demo --ros-args \
+  -p pump_on_settle_sec:=0.75 \
+  -p pump_off_settle_sec:=0.75
 ```
 
 ---
@@ -259,6 +288,8 @@ The system includes a GUI dashboard for high-level arm control.
 
 ## Architecture
 
+* **`poker_demo/`**
+Scripted dealer demo (`pick_demo`): homes once, drives pick/pump/flip presets, and reacts to `/button_count` when the arm is idle.
 * **`poker_control/`**
 Main package containing source code, custom nodes (Controller, Sim Bridge), and scripts.
 * **`poker_bringup/`**

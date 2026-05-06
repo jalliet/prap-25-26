@@ -24,5 +24,6 @@ patch_package() {
 patch_package poker_control controller generate_kinematics sim_bridge test_kinematics
 patch_package poker_dashboard dashboard
 patch_package poker_gpio poker_gpio
+patch_package poker_demo pick_demo
 
 echo "Shebangs patched to use venv Python."

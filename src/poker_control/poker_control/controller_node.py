@@ -12,7 +12,7 @@ import time
 from poker_interfaces.msg import ServoCommand, MotorFeedback
 from poker_interfaces.action import MoveJoints, MovePose
 from sensor_msgs.msg import JointState
-from std_msgs.msg import Float64MultiArray
+from std_msgs.msg import Bool, Float64MultiArray
 from ament_index_python.packages import get_package_share_directory
 
 
@@ -102,6 +102,19 @@ class PokerController(Node):
             goal_callback=self.goal_callback,
             cancel_callback=self.cancel_callback,
             callback_group=self.action_cb_group)
+
+        self.declare_parameter('arm_busy_publish_period_s', 0.05)
+        busy_period = float(self.get_parameter(
+            'arm_busy_publish_period_s').value)
+        self._arm_busy_pub = self.create_publisher(Bool, '/arm_busy', 10)
+        if busy_period > 0.0:
+            self.create_timer(busy_period, self._publish_arm_busy_tick)
+        self._publish_arm_busy_tick()
+
+    def _publish_arm_busy_tick(self):
+        msg = Bool()
+        msg.data = bool(self.tracking_active)
+        self._arm_busy_pub.publish(msg)
 
     # --- ACTION HANDLERS ---
     def goal_callback(self, goal_request):
@@ -318,7 +331,9 @@ class PokerController(Node):
             cmd_speed.append(int(limit))
 
         # Calculate Position Command (Hybrid LQR)
-        q_cmd_rad = q_des + (e + self.Ts * K_e)
+        # + (u_tilde * self.Ts)
+        # (e + self.Ts * K_e)
+        q_cmd_rad = q_des
         cmd_pos = self.rad_to_servo(q_cmd_rad)
         cmd_acc = [4000] * 6
 

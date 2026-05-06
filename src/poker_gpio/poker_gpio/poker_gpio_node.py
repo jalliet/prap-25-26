@@ -2,7 +2,7 @@ import sys
 
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Int32
+from std_msgs.msg import Bool, Int32
 
 try:
     from gpiozero import Button, OutputDevice
@@ -12,25 +12,33 @@ except ImportError:  # pragma: no cover - exercised on non-Pi development machin
 
 
 class PokerGpioNode(Node):
-    """ROS 2 bridge for the poker button and active-low pump GPIO circuit."""
+    """ROS 2 bridge for the poker button and switched pump GPIO output."""
 
     def __init__(self):
         super().__init__('poker_gpio')
 
-        self.declare_parameter('pump_pin', 27)
-        self.declare_parameter('pump_active_low', True)
+        self.declare_parameter('pump_pin', 22)
+        self.declare_parameter('pump_active_low', False)
         self.declare_parameter('button_pin', 17)
         self.declare_parameter('button_pull_up', False)
         self.declare_parameter('button_sample_period_s', 0.02)
         self.declare_parameter('button_debounce_samples', 3)
         self.declare_parameter('button_count_min', 1)
         self.declare_parameter('button_count_max', 5)
+        self.declare_parameter('gate_button_until_arm_idle', True)
+        self.declare_parameter('arm_busy_topic', '/arm_busy')
+
+        self._gate_button_until_arm_idle = bool(
+            self.get_parameter('gate_button_until_arm_idle').value)
+        arm_busy_tp = self.get_parameter('arm_busy_topic').value
+        self._arm_busy = False
 
         self._pump_pin = self.get_parameter('pump_pin').value
         self._pump_active_low = self.get_parameter('pump_active_low').value
         self._button_pin = self.get_parameter('button_pin').value
         self._button_pull_up = self.get_parameter('button_pull_up').value
-        self._sample_period_s = self.get_parameter('button_sample_period_s').value
+        self._sample_period_s = self.get_parameter(
+            'button_sample_period_s').value
         self._debounce_samples = max(
             1, int(self.get_parameter('button_debounce_samples').value))
         self._count_min = int(self.get_parameter('button_count_min').value)
@@ -45,7 +53,8 @@ class PokerGpioNode(Node):
                 'in the Pi workspace venv before launching this node.'
             )
 
-        # active_high=False makes on() drive the pin low and off() drive it high.
+        # active_high=True (default pump_active_low=False): HIGH = logical on,
+        # LOW = off (typical N-MOSFET low-side gate drive).
         self._pump = OutputDevice(
             self._pump_pin,
             active_high=not self._pump_active_low,
@@ -66,6 +75,14 @@ class PokerGpioNode(Node):
         self._pump_sub = self.create_subscription(
             Int32, '/pump_control', self._pump_callback, 10)
 
+        if self._gate_button_until_arm_idle:
+            self.create_subscription(
+                Bool,
+                arm_busy_tp,
+                self._arm_busy_callback,
+                10,
+            )
+
         self._timer = self.create_timer(
             float(self._sample_period_s), self._sample_button)
 
@@ -73,7 +90,8 @@ class PokerGpioNode(Node):
         self.get_logger().info(
             f'poker_gpio ready: pump GPIO {self._pump_pin} '
             f'({"active-low" if self._pump_active_low else "active-high"}), '
-            f'button GPIO {self._button_pin}'
+            f'button GPIO {self._button_pin}, '
+            f'gate_until_idle={"on" if self._gate_button_until_arm_idle else "off"}'
         )
 
     def _pump_callback(self, msg: Int32):
@@ -83,6 +101,9 @@ class PokerGpioNode(Node):
         else:
             self._pump.off()
         self.get_logger().info(f'pump {"on" if enabled else "off"}')
+
+    def _arm_busy_callback(self, msg: Bool):
+        self._arm_busy = bool(msg.data)
 
     def _sample_button(self):
         value = int(self._button.is_pressed)
@@ -106,6 +127,11 @@ class PokerGpioNode(Node):
             self._advance_button_count()
 
     def _advance_button_count(self):
+        if self._gate_button_until_arm_idle and self._arm_busy:
+            self.get_logger().info(
+                'Ignoring button edge: arm is executing a trajectory '
+                '(press again after motion completes).')
+            return
         if self._button_count >= self._count_max:
             self._button_count = self._count_min
         else:
