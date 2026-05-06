@@ -12,7 +12,7 @@ from std_msgs.msg import Int32
 
 
 # Pose x per button slot along the dealer line (left-to-right or fixed mount order).
-_CARD_X = {1: 0.11, 2: 0.065, 3: 0.0, 4: -0.065, 5: -0.11}
+_CARD_X = {1: 0.13, 2: 0.065, 3: 0.0, 4: -0.065, 5: -0.11}
 
 
 class PickDemoNode(Node):
