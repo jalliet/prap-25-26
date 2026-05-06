@@ -314,7 +314,7 @@ class PokerController(Node):
                     self.tracking_active = False
 
         if self.has_feedback:
-            e = q_des - self.q_measured
+            e = self.q_measured - q_des
         else:
             e = np.zeros(6)
 
@@ -322,7 +322,7 @@ class PokerController(Node):
         K_e = self.K_diag * e
 
         # Calculate Speed Limits
-        u_tilde = v_des + K_e
+        u_tilde = v_des - K_e
         cmd_speed = []
         for j in range(self.n_joints):
             u_steps_s = abs(u_tilde[j] * self.STEPS_PER_RAD)
@@ -331,9 +331,8 @@ class PokerController(Node):
             cmd_speed.append(int(limit))
 
         # Calculate Position Command (Hybrid LQR)
-        # + (u_tilde * self.Ts)
-        # (e + self.Ts * K_e)
-        q_cmd_rad = q_des
+        # (e - self.Ts * K_e)
+        q_cmd_rad = q_des_next + (e - self.Ts * K_e)
         cmd_pos = self.rad_to_servo(q_cmd_rad)
         cmd_acc = [4000] * 6
 
