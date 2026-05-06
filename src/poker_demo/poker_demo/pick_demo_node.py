@@ -211,7 +211,7 @@ class PickDemoNode(Node):
 
         self.get_logger().info(f'slot {slot} pick low')
         if not self._send_goal_pose(
-                card_x, 0.265, 0.057, 0.0, 0.0, duration=d_pick):
+                card_x, 0.265, 0.059, 0.0, 0.0, duration=d_pick):
             return False
 
         self.get_logger().info(f'slot {slot} pump ON')
