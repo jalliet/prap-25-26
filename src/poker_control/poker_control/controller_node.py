@@ -332,7 +332,7 @@ class PokerController(Node):
 
         # Calculate Position Command (Hybrid LQR)
         # (e - self.Ts * K_e)
-        q_cmd_rad = q_des_next + (e - self.Ts * K_e)
+        q_cmd_rad = q_des_next
         cmd_pos = self.rad_to_servo(q_cmd_rad)
         cmd_acc = [4000] * 6
 
