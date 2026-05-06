@@ -1,5 +1,6 @@
 import threading
 import time
+from collections import deque
 
 import rclpy
 from rclpy.action import ActionClient
@@ -39,6 +40,7 @@ class PickDemoNode(Node):
         self._busy = False
         self._startup_done = threading.Event()
         self._last_count = None
+        self._pick_queue = deque()
 
         self._btn_min = int(self.get_parameter('button_count_min').value)
         self._btn_max = int(self.get_parameter('button_count_max').value)
@@ -54,24 +56,20 @@ class PickDemoNode(Node):
     def set_executor(self, executor: MultiThreadedExecutor) -> None:
         self._executor = executor
 
-    def begin_startup(self) -> None:
-        threading.Thread(target=self._startup_worker, daemon=True).start()
-
-    def _startup_worker(self):
+    def run_startup_blocking(self) -> bool:
+        """Run homing + first slot on caller thread before executor.spin() main loop."""
         ok = False
         try:
             with self._mutex:
-                if self._busy:
-                    self.get_logger().warn('startup skipped: demo already busy')
-                    return
                 self._busy = True
             if not self._wait_for_servers():
-                return
+                return False
             if not self._send_home():
-                return
+                return False
             if not self._pick_sequence(slot=self._btn_min, long_intro=True):
-                return
+                return False
             ok = True
+            return True
         finally:
             with self._mutex:
                 self._busy = False
@@ -81,9 +79,21 @@ class PickDemoNode(Node):
             else:
                 self.get_logger().error('startup sequence aborted')
 
+    def drain_scheduled_pick(self) -> None:
+        """Call from main loop (same thread as spin_once waits) to process one queued pick."""
+        with self._mutex:
+            if self._busy or not self._startup_done.is_set() or not self._pick_queue:
+                return
+            slot, intro = self._pick_queue.popleft()
+            self._busy = True
+
+        try:
+            self._pick_sequence(slot=slot, long_intro=intro)
+        finally:
+            with self._mutex:
+                self._busy = False
+
     def _on_button(self, msg: Int32):
-        if self._executor is None:
-            return
         v = int(msg.data)
         self.get_logger().debug(f'/button_count data={v}')
 
@@ -98,41 +108,28 @@ class PickDemoNode(Node):
             self._last_count = v
             if prev is None:
                 return
-            trigger_pick = v != prev and v in self._edge_pick_slots
-
-        if trigger_pick:
-            threading.Thread(
-                target=self._slot_worker,
-                kwargs={
-                    'slot': v,
-                    'long_intro': v == self._btn_min,
-                },
-                daemon=True,
-            ).start()
-
-    def _slot_worker(self, slot: int, *, long_intro: bool = False):
-        with self._mutex:
-            if self._busy:
+            if not (v != prev and v in self._edge_pick_slots):
                 return
-            self._busy = True
-        try:
-            self._pick_sequence(slot=slot, long_intro=long_intro)
-        finally:
-            with self._mutex:
-                self._busy = False
+            self._pick_queue.append(
+                (v, v == self._btn_min),
+            )
 
     def _require_executor(self):
         if self._executor is None:
             raise RuntimeError('executor not configured (internal error)')
 
-    def _spin_until(self, fut, timeout_sec=None):
+    def _wait_future(self, future, timeout_sec=None) -> bool:
+        """Drain executor callbacks until future completes (never use spin_until_future_complete
+        on the same executor that is spinning — Jazzy raises RuntimeError)."""
         self._require_executor()
-        return rclpy.spin_until_future_complete(
-            self,
-            fut,
-            executor=self._executor,
-            timeout_sec=timeout_sec,
-        )
+        deadline = None if timeout_sec is None else (
+            time.monotonic() + float(timeout_sec))
+        while rclpy.ok() and not future.done():
+            if deadline is not None and time.monotonic() > deadline:
+                self.get_logger().error('action wait timed out')
+                return False
+            self._executor.spin_once(timeout_sec=0.05)
+        return True
 
     def _wait_for_servers(self):
         deadline = time.monotonic() + self._server_timeout
@@ -169,13 +166,15 @@ class PickDemoNode(Node):
 
     def _send_goal(self, client, goal):
         send_future = client.send_goal_async(goal)
-        self._spin_until(send_future)
+        if not self._wait_future(send_future):
+            return False
         gh = send_future.result()
         if gh is None or not gh.accepted:
             self.get_logger().error('move goal rejected or failed to send')
             return False
         result_future = gh.get_result_async()
-        self._spin_until(result_future)
+        if not self._wait_future(result_future):
+            return False
         wrapped = result_future.result()
         if wrapped is None:
             self.get_logger().error('empty action result')
@@ -230,7 +229,7 @@ class PickDemoNode(Node):
 
         self.get_logger().info(f'slot {slot} drop')
         if not self._send_goal_pose(
-                card_x, 0.2, 0.15, -0.4, 3.13, duration=d_other):
+                card_x, 0.2, 0.15, -1.2, 3.13, duration=d_other):
             return False
 
         self.get_logger().info(f'slot {slot} pump OFF')
@@ -252,10 +251,12 @@ def main(args=None):
     executor.add_node(node)
     node.set_executor(executor)
 
-    node.begin_startup()
+    node.run_startup_blocking()
 
     try:
-        executor.spin()
+        while rclpy.ok():
+            executor.spin_once(timeout_sec=0.1)
+            node.drain_scheduled_pick()
     except KeyboardInterrupt:
         pass
     finally:
