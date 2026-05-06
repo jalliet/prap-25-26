@@ -27,6 +27,19 @@ class PickDemoNode(Node):
         self.declare_parameter('button_count_min', 1)
         self.declare_parameter('button_count_max', 5)
 
+        # Startup / homing: Cartesian via /move_pose by default; use home_mode:=joints for rad list.
+        self.declare_parameter('home_mode', 'pose')
+        self.declare_parameter('home_pose_x', 0.11)
+        self.declare_parameter('home_pose_y', 0.265)
+        self.declare_parameter('home_pose_z', 0.15)
+        self.declare_parameter('home_pose_pitch', 0.0)
+        self.declare_parameter('home_pose_roll', 0.0)
+        self.declare_parameter('home_pose_duration_sec', 10.0)
+        self.declare_parameter(
+            'home_joint_positions',
+            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        self.declare_parameter('home_joint_duration_sec', 10.0)
+
         self._pump_on_settle_sec = (
             float(self.get_parameter('pump_on_settle_sec').value))
         self._pump_off_settle_sec = (
@@ -187,10 +200,29 @@ class PickDemoNode(Node):
                 f'move failed success=False final_error={err}')
         return bool(ok)
 
-    def _send_home(self):
+    def _send_home(self) -> bool:
         self.get_logger().info('homing...')
-        home_pos = [0.11, 0.265, 0.15, 0.0, 0.0, 10.0]
-        return self._send_goal_joints(home_pos, duration=10.0)
+        mode = str(self.get_parameter('home_mode').value).lower().strip()
+        if mode == 'joints':
+            joints = list(self.get_parameter('home_joint_positions').value)
+            if len(joints) != 6:
+                self.get_logger().error(
+                    f'home_joint_positions must have 6 values, got {len(joints)}')
+                return False
+            dur = float(self.get_parameter('home_joint_duration_sec').value)
+            return self._send_goal_joints(joints, duration=dur)
+        return self._send_home_pose()
+
+    def _send_home_pose(self) -> bool:
+        x = float(self.get_parameter('home_pose_x').value)
+        y = float(self.get_parameter('home_pose_y').value)
+        z = float(self.get_parameter('home_pose_z').value)
+        pitch = float(self.get_parameter('home_pose_pitch').value)
+        roll = float(self.get_parameter('home_pose_roll').value)
+        dur = float(self.get_parameter('home_pose_duration_sec').value)
+        self.get_logger().info(
+            f'home MovePose x={x} y={y} z={z} pitch={pitch} roll={roll} dur={dur}')
+        return self._send_goal_pose(x, y, z, pitch, roll, duration=dur)
 
     def _pump(self, on: bool):
         msg = Int32()
