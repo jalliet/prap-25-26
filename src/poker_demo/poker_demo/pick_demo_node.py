@@ -189,8 +189,8 @@ class PickDemoNode(Node):
 
     def _send_home(self):
         self.get_logger().info('homing...')
-        zeros = [0.0] * 6
-        return self._send_goal_joints(zeros, duration=10.0)
+        home_pos = [0.11, 0.265, 0.15, 0.0, 0.0]
+        return self._send_goal_joints(home_pos, duration=10.0)
 
     def _pump(self, on: bool):
         msg = Int32()
